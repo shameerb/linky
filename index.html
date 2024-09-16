@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Link Viewer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 10px;
+            background-color: #f5f5f5;
+            color: #333;
+            font-size: 14px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 1px solid #3498db;
+            padding-bottom: 5px;
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        #file-list {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        #preview {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .link-item {
+            display: flex;
+            align-items: center;
+            padding: 2px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .link-item:last-child {
+            border-bottom: none;
+        }
+        .link-item p {
+            margin: 0;
+            flex-grow: 1;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        .link-item a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .link-item a:hover {
+            text-decoration: underline;
+        }
+        .delete-btn {
+            visibility: hidden;
+            cursor: pointer;
+            color: #ccc;
+            font-size: 14px;
+            padding: 0 5px;
+            transition: color 0.2s ease;
+        }
+        .link-item:hover .delete-btn {
+            visibility: visible;
+        }
+        .delete-btn:hover {
+            color: #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <h1>Markdown Link Viewer</h1>
+    <select id="file-list"></select>
+    <div id="preview"></div>
+
+    <script>
+        const fileList = document.getElementById('file-list');
+        const preview = document.getElementById('preview');
+        let currentFile = '';
+
+        function loadFiles() {
+            fetch('/files')
+                .then(response => response.json())
+                .then(files => {
+                    fileList.innerHTML = '<option value="">Select a file</option>';
+                    files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.textContent = file;
+                        fileList.appendChild(option);
+                    });
+                });
+        }
+
+        function loadFile(filename) {
+            currentFile = filename;
+            fetch(`/file/${filename}`)
+                .then(response => response.json())
+                .then(response => {
+                    preview.innerHTML = '';
+                    response.data.forEach((line, index) => {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'link-item';
+                        wrapper.innerHTML = line;
+                        
+                        const deleteBtn = document.createElement('span');
+                        deleteBtn.textContent = 'Delete';
+                        deleteBtn.className = 'delete-btn';
+                        deleteBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            deleteLine(index);
+                        };
+                        
+                        wrapper.appendChild(deleteBtn);
+                        preview.appendChild(wrapper);
+                    });
+                });
+        }
+
+        function deleteLine(index) {
+            if (confirm('Are you sure you want to delete this line?')) {
+                fetch('/delete_line', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        filename: currentFile,
+                        lineIndex: index
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        loadFile(currentFile);
+                    } else {
+                        alert('Error deleting line: ' + data.message);
+                    }
+                });
+            }
+        }
+
+        fileList.addEventListener('change', (e) => {
+            if (e.target.value) {
+                loadFile(e.target.value);
+            }
+        });
+
+        loadFiles();
+    </script>
+</body>
+</html>
