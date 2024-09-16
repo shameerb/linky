@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const MARKDOWN_DIR = "/Users/shameer/Documents/Personal/ComputerScience/General/Projects/Others/markdown-service/Links"
+const MARKDOWN_DIR = ""
 
 type FileContent struct {
 	Data []string `json:"data"`
