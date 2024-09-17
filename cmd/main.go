@@ -32,7 +32,7 @@ func main() {
 	r.HandleFunc("/files", listFiles).Methods("GET")
 	r.HandleFunc("/file/{filename}", getFile).Methods("GET")
 	r.HandleFunc("/delete_line", deleteLine).Methods("POST")
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("/Users/shameer/Documents/Personal/ComputerScience/General/Projects/Others/markdown-service/markdown-editor-go/"))).Methods("GET")
+	r.PathPrefix("/").Handler(http.FileServer(http.Dir(".")))
 
 	log.Println("Server running on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
