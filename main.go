@@ -1,26 +1,39 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
-	"github.com/gomarkdown/markdown"
 	"github.com/gorilla/mux"
 )
 
 var markdownDir string
 
-type FileContent struct {
-	Data []string `json:"data"`
+type Link struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+type Subject struct {
+	Subject string `json:"subject"`
+	Links   []Link `json:"links"`
+}
+
+type Response struct {
+	Data []Subject `json:"data"`
 }
 
 type DeleteLineRequest struct {
-	Filename  string `json:"filename"`
-	LineIndex int    `json:"lineIndex"`
+	Filename string `json:"filename"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
 }
 
 func main() {
@@ -29,10 +42,15 @@ func main() {
 	if markdownDir == "" {
 		log.Fatal("set MARKDOWN_DIR env variable")
 	}
+
+	staticFilesDir := os.Getenv("STATIC_FILES_DIR")
+	if staticFilesDir == "" {
+		log.Fatal("set STATIC_FILES_DIR env variable")
+	}
 	r.HandleFunc("/files", listFiles).Methods("GET")
 	r.HandleFunc("/file/{filename}", getFile).Methods("GET")
-	r.HandleFunc("/delete_line", deleteLine).Methods("POST")
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("/Users/shameer/Documents/Personal/ComputerScience/General/Projects/Others/markdown-service/markdown-editor-go/"))).Methods("GET")
+	r.HandleFunc("/delete_link", deleteLine).Methods("POST")
+	r.PathPrefix("/").Handler(http.FileServer(http.Dir(staticFilesDir))).Methods("GET")
 
 	log.Println("Server running on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
@@ -55,21 +73,52 @@ func listFiles(w http.ResponseWriter, r *http.Request) {
 func getFile(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	filename := vars["filename"]
-	content, err := os.ReadFile(filepath.Join(markdownDir, filename))
+	file, err := os.Open(filepath.Join(markdownDir, filename))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer file.Close()
 
-	lines := strings.Split(string(content), "\n")
-	htmlContent := make([]string, 0, len(lines))
-	for _, line := range lines {
-		// if strings.TrimSpace(line) != "" {
-		htmlContent = append(htmlContent, string(markdown.ToHTML([]byte(line), nil, nil)))
-		// }
+	scanner := bufio.NewScanner(file)
+	var response Response
+	var currentSubject *Subject
+	linkRegex := regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "##") {
+			if currentSubject != nil {
+				response.Data = append(response.Data, *currentSubject)
+			}
+			currentSubject = &Subject{
+				Subject: strings.TrimSpace(strings.TrimPrefix(line, "##")),
+			}
+
+		} else if strings.HasPrefix(line, "-") {
+			if currentSubject == nil {
+				currentSubject = &Subject{
+					Subject: "Others",
+				}
+			}
+			matches := linkRegex.FindStringSubmatch(line)
+			if len(matches) == 3 {
+				currentSubject.Links = append(currentSubject.Links, Link{
+					Title: matches[1],
+					URL:   matches[2],
+				})
+			}
+		}
+	}
+	if currentSubject != nil {
+		response.Data = append(response.Data, *currentSubject)
+	}
+	if err := scanner.Err(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	json.NewEncoder(w).Encode(FileContent{Data: htmlContent})
+	json.NewEncoder(w).Encode(response)
 }
 
 func deleteLine(w http.ResponseWriter, r *http.Request) {
@@ -87,13 +136,17 @@ func deleteLine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	if req.LineIndex < 0 || req.LineIndex >= len(lines) {
-		http.Error(w, "Invalid line index", http.StatusBadRequest)
-		return
+	var newLines []string
+	linkToDelete := fmt.Sprintf("[%s](%s)", req.Title, req.URL)
+	for _, line := range lines {
+		if strings.Contains(line, linkToDelete) {
+			// skip this line
+			continue
+		}
+		newLines = append(newLines, line)
 	}
 
-	lines = append(lines[:req.LineIndex], lines[req.LineIndex+1:]...)
-	err = os.WriteFile(filepath, []byte(strings.Join(lines, "\n")), 0644)
+	err = os.WriteFile(filepath, []byte(strings.Join(newLines, "\n")), 0644)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
