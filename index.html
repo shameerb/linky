@@ -133,9 +133,9 @@
     <div class="controls">
         <select id="file-list"></select>
         <input type="text" id="search-input" placeholder="Search links...">
+        <!-- <button id="add-links-btn">Add Links</button> -->
     </div>
     <div id="preview"></div>
-
     <script>
         const fileList = document.getElementById('file-list');
         const preview = document.getElementById('preview');
@@ -239,7 +239,34 @@
             }
         }
 
+        function fuzzySearch(str, pattern) {
+            pattern = pattern.toLowerCase();
+            str = str.toLowerCase();
+            let score = 0;
+            let patternIndex = 0;
+            let lastMatchIndex = -1;
+
+            for (let i = 0; i < str.length; i++) {
+                if (str[i] === pattern[patternIndex]) {
+                    score += 1;
+                    if (lastMatchIndex === i - 1) {
+                        score += 2; // Bonus for consecutive matches
+                    }
+                    lastMatchIndex = i;
+                    patternIndex++;
+                    if (patternIndex === pattern.length) {
+                        score += (str.length - i) * 0.5; // Bonus for earlier match
+                        break;
+                    }
+                }
+            }
+
+            return patternIndex === pattern.length ? score : 0;
+        }
+
         function searchLinks(keyword) {
+            const keywords = keyword.toLowerCase().split(/\s+/);
+
             const filteredData = currentData
                 .filter(subject => subject.links && subject.links.length > 0)
                 .map(subject => ({
@@ -249,7 +276,28 @@
                     link.url.toLowerCase().includes(keyword.toLowerCase())
                 )
             })).filter(subject => subject.links.length > 0);
-            
+
+            // const filteredData = currentData
+            //     .filter(subject => subject.links && subject.links.length > 0)
+            //     .map(subject => {
+            //         const scoredLinks = subject.links.map(link => {
+            //             const titleScore = keywords.reduce((score, kw) => score + fuzzySearch(link.title, kw), 0);
+            //             const urlScore = keywords.reduce((score, kw) => score + fuzzySearch(link.url, kw), 0);
+            //             return {
+            //                 ...link,
+            //                 score: titleScore + urlScore
+            //             };
+            //         }).filter(link => link.score > 0);
+
+            //         return {
+            //             ...subject,
+            //             links: scoredLinks,
+            //             score: scoredLinks.reduce((sum, link) => sum + link.score, 0)/scoredLinks.length
+            //         };
+            //     }).filter(subject => subject.score > 0);
+
+            // filteredData.sort((a, b) => b.score - a.score);
+
             renderPreview(filteredData);
         }
 
