@@ -30,10 +30,14 @@ type Response struct {
 	Data []Subject `json:"data"`
 }
 
-type DeleteLineRequest struct {
-	Filename string `json:"filename"`
-	Title    string `json:"title"`
-	URL      string `json:"url"`
+type DeleteLink struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+type DeleteLinkRequest struct {
+	Filename string       `json:"filename"`
+	Links    []DeleteLink `json:"links"`
 }
 
 func main() {
@@ -49,7 +53,7 @@ func main() {
 	}
 	r.HandleFunc("/files", listFiles).Methods("GET")
 	r.HandleFunc("/file/{filename}", getFile).Methods("GET")
-	r.HandleFunc("/delete_link", deleteLine).Methods("POST")
+	r.HandleFunc("/delete_links", deleteLinks).Methods("POST")
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir(staticFilesDir))).Methods("GET")
 
 	log.Println("Server running on http://localhost:8080")
@@ -87,12 +91,12 @@ func getFile(w http.ResponseWriter, r *http.Request) {
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "##") {
+		if strings.HasPrefix(line, "#") {
 			if currentSubject != nil {
 				response.Data = append(response.Data, *currentSubject)
 			}
 			currentSubject = &Subject{
-				Subject: strings.TrimSpace(strings.TrimPrefix(line, "##")),
+				Subject: strings.TrimSpace(strings.TrimLeft(line, "#")),
 			}
 
 		} else if strings.HasPrefix(line, "-") {
@@ -121,8 +125,8 @@ func getFile(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func deleteLine(w http.ResponseWriter, r *http.Request) {
-	var req DeleteLineRequest
+func deleteLinks(w http.ResponseWriter, r *http.Request) {
+	var req DeleteLinkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -137,13 +141,23 @@ func deleteLine(w http.ResponseWriter, r *http.Request) {
 
 	lines := strings.Split(string(content), "\n")
 	var newLines []string
-	linkToDelete := fmt.Sprintf("[%s](%s)", req.Title, req.URL)
+
+	linksToDelete := make(map[string]bool)
+	for _, link := range req.Links {
+		linksToDelete[fmt.Sprintf("[%s](%s)", link.Title, link.URL)] = true
+	}
+
 	for _, line := range lines {
-		if strings.Contains(line, linkToDelete) {
-			// skip this line
-			continue
+		shouldDelete := false
+		for linkToDelete := range linksToDelete {
+			if strings.Contains(line, linkToDelete) {
+				shouldDelete = true
+				break
+			}
 		}
-		newLines = append(newLines, line)
+		if !shouldDelete {
+			newLines = append(newLines, line)
+		}
 	}
 
 	err = os.WriteFile(filepath, []byte(strings.Join(newLines, "\n")), 0644)
