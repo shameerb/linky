@@ -5,6 +5,9 @@ How to use
 How to setup
 
 ### Features
+- Metada
+    - nos of links
+    - pages
 - Notes
 - Labels/Tags links
 - Link to sheets for organization management - books, courses

@@ -47,10 +47,12 @@ func main() {
 		log.Fatal("set MARKDOWN_DIR env variable")
 	}
 
-	staticFilesDir := os.Getenv("STATIC_FILES_DIR")
-	if staticFilesDir == "" {
-		log.Fatal("set STATIC_FILES_DIR env variable")
-	}
+	// staticFilesDir := os.Getenv("STATIC_FILES_DIR")
+
+	// if staticFilesDir == "" {
+	// 	log.Fatal("set STATIC_FILES_DIR env variable")
+	// }
+	staticFilesDir := "./"
 	r.HandleFunc("/files", listFiles).Methods("GET")
 	r.HandleFunc("/file/{filename}", getFile).Methods("GET")
 	r.HandleFunc("/delete_links", deleteLinks).Methods("POST")
