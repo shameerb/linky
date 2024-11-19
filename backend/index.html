@@ -16,29 +16,20 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             max-width: 1000px;
             margin: 0 auto;
-            background-color: #f5f5f5;
-            color: #333;
+            background-color: var(--background-color);
+            color: var(--text-color);
             font-size: 14px;
             padding: 20px;
         }
-        /*h3 {
-            color: #2c3e50;
-            border-bottom: 1px solid #3498db;
-            padding-bottom: 10px;
-            font-size: 2em;
-        }*/
 
         .controls {
-/*            border-bottom: 1px solid #3498db;*/
-            padding-bottom: 5px;
-            padding-top: 5px;
+            padding: 5px 0;
             display: flex;
             gap: 10px;
-            margin-top: 10px;
-            margin-bottom: 10px;
+            margin: 10px 0;
         }
 
         #file-list, #search-input {
@@ -59,58 +50,90 @@
         }
 
         #preview-wrapper {
-            background-color: white;
-            border: 1px solid #ddd;
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
             border-radius: 4px;
             padding: 15px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 20px;
+            overflow: hidden;
+            width: calc(100% - 32px);
         }
+
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            overflow-x: hidden;
+        }
+
+        .multi-select-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .count-info {
+            color: #666;
+            font-size: 0.9em;
+        }
+
         .subject {
             font-size: 1.2em;
             font-weight: bold;
-            margin-top: 20px;
-            margin-bottom: 10px;
-            color: #2c3e50;
+            margin: 20px 0 10px;
+            color: var(--secondary-color);
         }
+
         .link-item {
             display: flex;
             align-items: center;
             padding: 5px 0;
-            border-bottom: 1px solid #f0f0f0;
+            border-bottom: 1px solid var(--border-color);
+            overflow: hidden;
+            width: 100%;
         }
+
         .link-item:last-child {
             border-bottom: none;
         }
+
         .link-item p {
             margin: 0;
             flex-grow: 1;
             font-size: 1em;
             line-height: 1.4;
             padding-left: 5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .link-item a {
             color: #01579b;
             text-decoration: none;
         }
+
         .link-item a:hover {
             text-decoration: underline;
         }
-        #search-container {
-            margin-bottom: 20px;
-        }
-        #search-input {
-            width: calc(100% - 22px);
-            padding: 10px;
-            font-size: 16px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .multi-select-controls {
+
+        .checkbox-wrapper {
             display: flex;
-            margin-bottom: 10px;
             align-items: center;
-            gap: 10px;
+            width: 25px;
+        }
+
+        #delete-selected-btn:hover {
+            background-color: #FFC5C5;
+        }
+
+        #copy-filtered-btn:hover {
+            background-color: #D3D3D3;
+        }
+
+        .link-item.checked a {
+            text-decoration: line-through;
         }
 
         .multi-select-controls button {
@@ -126,56 +149,32 @@
             border-radius: 3px;
             transition: background-color 0.3s;
         }
-
-        .checkbox-wrapper {
-            display: flex;
-            align-items: center;
-            margin-right: 10px;
-            width: 25px;
-        }
-        .checkbox-wrapper input[type="checkbox"] {
-            margin-right: 5px;
-        }
-        
-        #delete-selected-btn:hover {
-            background-color: #FFC5C5;
-        }
-
-        #copy-filtered-btn:hover {
-            background-color: #D3D3D3;
-        }
-
-        /*.select-all-wrapper {
-            display: flex;
-            align-items: center;
-        }*/
-        
-        .link-item.checked a {
-            text-decoration: line-through;
-        }
     </style>
 </head>
 <body>
-    <!-- <h3>Personal Links</h3> -->
     <div class="controls">
         <select id="file-list"></select>
         <input type="text" id="search-input" placeholder="Search links...">
     </div>
     
-     <div id="preview-wrapper">
-        <div class="multi-select-controls">
-            <!-- <div class="select-all-wrapper"> -->
-                <input type="checkbox" id="select-all-btn" title="Select All / Clear All">
-            <!-- </div> -->
-            <button id="delete-selected-btn" title="Delete selected">
-                <i class="fas fa-trash-alt"></i>
-            </button>
-            <button id="copy-filtered-btn" title="Copy filtered">
-                <i class="fas fa-copy"></i>
-            </button>
-        </div>
-        <div id="preview">
-        </div>
+    <div id="preview-wrapper">
+        <div class="main-content">
+            <div class="multi-select-controls" style="display: flex; justify-content: space-between; width: 100%;">
+                <div style="display: flex; align-items: center;">
+                    <input type="checkbox" id="select-all-btn" title="Select All / Clear All">
+                    <button id="delete-selected-btn" title="Delete selected">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                    <button id="copy-filtered-btn" title="Copy filtered">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                <span class="count-info">
+                    Total: <span id="total-links">0</span>
+                </span>
+            </div>
+            <div id="preview"></div>
+        </div>        
     </div>
     <script>
         const fileList = document.getElementById('file-list');
@@ -239,6 +238,11 @@
         function renderPreview(data) {
             preview.innerHTML = '';
             preview.style.display = 'block';
+            
+            // Calculate total links
+            const totalLinks = data.reduce((sum, subject) => sum + (subject.links?.length || 0), 0);
+            document.getElementById('total-links').textContent = totalLinks;
+            
             data.forEach((subject) => {
                 const subjectDiv = document.createElement('div');
                 subjectDiv.className = 'subject';
@@ -340,7 +344,9 @@
                 subject.links.sort((a, b) => b.relevance - a.relevance);
             });
 
-            // Sort subjects based on their most relevant link
+            // Update filtered count
+            const filteredCount = filteredData.reduce((sum, subject) => sum + subject.links.length, 0);
+
             renderPreview(filteredData.sort((a, b) => b.links[0].relevance - a.links[0].relevance));
         }
 
