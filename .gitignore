@@ -28,3 +28,19 @@ go.work.sum
 node_modules/
 dist/
 .DS_Store
+
+# Build and temp directories
+backend/bin/
+backend/assets/assets/
+.vite/
+**/deps_temp*/
+
+# macOS
+**/.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Application specific
+Links/

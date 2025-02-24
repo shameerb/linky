@@ -2,18 +2,18 @@ package main
 
 import (
 	"bufio"
+	"embed"
 	"encoding/json"
 	"fmt"
-	"html/template"
-	"io/ioutil"
 	"log"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"io/fs"
 
 	"github.com/gorilla/mux"
 )
@@ -22,6 +22,11 @@ var (
 	markdownDir string
 	isProd      bool
 )
+
+// Embed the entire dist directory
+//
+//go:embed dist/*
+var embeddedFiles embed.FS
 
 type Link struct {
 	ID        string    `json:"id"`
@@ -56,103 +61,17 @@ type BulkLink struct {
 }
 
 type BulkLinksRequest struct {
-	File  string    `json:"filename"`
-	Links []BulkLink `json:"links"`
-	Content string  `json:"content"`
-}
-
-type ManifestEntry struct {
-	File    string   `json:"file"`
-	Src     string   `json:"src"`
-	CSS     []string `json:"css,omitempty"`
-	IsEntry bool     `json:"isEntry,omitempty"`
-}
-
-func loadManifest() (map[string]string, error) {
-	assets := make(map[string]string)
-	
-	manifestPath := filepath.Join("dist", "manifest.json")
-	data, err := ioutil.ReadFile(manifestPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read manifest: %w", err)
-	}
-
-	var manifest map[string]ManifestEntry
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return nil, fmt.Errorf("failed to parse manifest: %w", err)
-	}
-
-	// Find main entry and its CSS
-	for _, entry := range manifest {
-		if entry.IsEntry {
-			assets["js"] = entry.File
-			if len(entry.CSS) > 0 {
-				assets["css"] = entry.CSS[0]
-			}
-			break
-		}
-	}
-
-	return assets, nil
-}
-
-func serveIndex(w http.ResponseWriter, r *http.Request) {
-	if isProd {
-		assets, err := loadManifest()
-		if err != nil {
-			log.Printf("Error loading manifest: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		tmpl, err := template.ParseFiles("index.html")
-		if err != nil {
-			log.Printf("Error parsing template: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		err = tmpl.Execute(w, assets)
-		if err != nil {
-			log.Printf("Error executing template: %v", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		// In development, just serve the basic index.html
-		http.ServeFile(w, r, "index.html")
-	}
-}
-
-// customFileServer wraps http.FileServer to set correct MIME types
-func customFileServer(dir string) http.Handler {
-	fs := http.FileServer(http.Dir(dir))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ext := filepath.Ext(r.URL.Path)
-		
-		switch ext {
-		case ".js":
-			w.Header().Set("Content-Type", "application/javascript")
-		case ".css":
-			w.Header().Set("Content-Type", "text/css")
-		case ".html":
-			w.Header().Set("Content-Type", "text/html")
-		default:
-			if ct := mime.TypeByExtension(ext); ct != "" {
-				w.Header().Set("Content-Type", ct)
-			}
-		}
-		
-		fs.ServeHTTP(w, r)
-	})
+	File    string     `json:"filename"`
+	Links   []BulkLink `json:"links"`
+	Content string     `json:"content"`
 }
 
 func main() {
 	r := mux.NewRouter()
-	
+
 	// Check if we're in production mode
 	isProd = os.Getenv("GO_ENV") == "production"
-	
+
 	markdownDir = os.Getenv("MARKDOWN_DIR")
 	if markdownDir == "" {
 		log.Fatal("MARKDOWN_DIR environment variable is required")
@@ -169,26 +88,12 @@ func main() {
 	api.HandleFunc("/delete_links", deleteLinks).Methods("POST")
 	api.HandleFunc("/bulk_links", addBulkLinks).Methods("POST")
 
-	if isProd {
-		// In production, serve static files from the dist directory
-		r.PathPrefix("/dist/").Handler(http.StripPrefix("/dist/", customFileServer("dist")))
-		
-		// Serve index.html for all other routes (SPA support)
-		r.PathPrefix("/").HandlerFunc(serveIndex)
-		
-		log.Printf("Server running in production mode on http://localhost:8080")
-	} else {
-		// In development, serve static assets with proper MIME types
-		r.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", customFileServer("assets")))
-		
-		// Serve index.html for all other routes (SPA support)
-		r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/html")
-			http.ServeFile(w, r, "index.html")
-		})
-		
-		log.Printf("Server running in development mode on http://localhost:8080 (API only)")
+	// Serve static files from the embedded dist directory
+	distFS, err := fs.Sub(embeddedFiles, "dist")
+	if err != nil {
+		log.Fatalf("Failed to create file system for dist: %v", err)
 	}
+	r.PathPrefix("/").Handler(http.FileServer(http.FS(distFS)))
 
 	log.Printf("Using markdown directory: %s", markdownDir)
 	log.Fatal(http.ListenAndServe(":8080", r))
@@ -305,7 +210,7 @@ func deleteLinks(w http.ResponseWriter, r *http.Request) {
 
 func addBulkLinks(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received bulk links request")
-	
+
 	var req BulkLinksRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding request body: %v", err)
@@ -336,7 +241,7 @@ func addBulkLinks(w http.ResponseWriter, r *http.Request) {
 	// Get today's date in DD/MM/YYYY format
 	now := time.Now()
 	dateSection := fmt.Sprintf("# %s\n\n", now.Format("02/01/2006"))
-	
+
 	// Add newlines before new section if file isn't empty
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -350,10 +255,10 @@ func addBulkLinks(w http.ResponseWriter, r *http.Request) {
 	if fileInfo.Size() > 0 {
 		dateSection = "\n\n" + dateSection
 	}
-	
+
 	finalContent := dateSection + content + "\n"
 	log.Printf("Writing content:\n%s", finalContent)
-	
+
 	if _, err := file.WriteString(finalContent); err != nil {
 		log.Printf("Error writing content: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
