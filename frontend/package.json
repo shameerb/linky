@@ -1,19 +1,18 @@
 {
-  "name": "linky-frontend",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
+  "name": "linky",
+  "version": "1.0.0",
+  "description": "A Vue.js application for managing markdown links",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.5.12"
+    "@fortawesome/fontawesome-free": "^6.7.2",
+    "vue": "^3.3.4"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.1.4",
-    "vite": "^5.4.10",
-    "vite-plugin-vue-devtools": "^7.5.4"
+    "@vitejs/plugin-vue": "^4.2.3",
+    "vite": "^4.4.0"
   }
 }

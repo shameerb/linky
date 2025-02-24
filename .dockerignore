@@ -1,0 +1,19 @@
+# Version control
+.git
+.gitignore
+
+# Dependencies
+frontend/node_modules
+frontend/dist
+
+# Build artifacts
+backend/bin
+backend/static
+
+# Development files
+.env
+*.log
+README.md
+Makefile
+Dockerfile
+.dockerignore
