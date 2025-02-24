@@ -10,6 +10,21 @@ export default defineConfig(({ command, mode }) => {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url))
       }
+    },
+    build: {
+      assetsInlineLimit: 0, // Disable inlining assets
+      rollupOptions: {
+        output: {
+          assetFileNames: (assetInfo) => {
+            const info = assetInfo.name.split('.')
+            const ext = info[info.length - 1]
+            if (/\.(woff2?|eot|ttf|otf)(\?.*)?$/i.test(assetInfo.name)) {
+              return `assets/fonts/[name].[hash].[ext]`
+            }
+            return `assets/[name].[hash].[ext]`
+          }
+        }
+      }
     }
   }
 
@@ -26,11 +41,9 @@ export default defineConfig(({ command, mode }) => {
     }
   } else {
     // Production build settings
-    config.build = {
-      outDir: '../backend/dist',
-      emptyOutDir: true,
-      manifest: true
-    }
+    config.build.outDir = '../backend/dist'
+    config.build.emptyOutDir = true
+    config.build.manifest = true
   }
 
   return config

@@ -33,21 +33,21 @@
               title="Delete selected"
               @click="deleteSelected"
             >
-              <i class="fas fa-trash-alt"></i>
+              <font-awesome-icon icon="trash-alt" />
             </button>
             <button 
               id="copy-filtered-btn" 
               title="Copy filtered"
               @click="copyFilteredLinks"
             >
-              <i class="fas fa-copy"></i>
+              <font-awesome-icon icon="copy" />
             </button>
             <button 
               id="bulk-add-btn" 
               title="Add bulk links to new section"
               @click="openBulkAddDialog('')"
             >
-              <i class="fas fa-plus"></i>
+              <font-awesome-icon icon="plus" />
             </button>
           </div>
           <span class="count-info">
@@ -63,7 +63,7 @@
               @click="openBulkAddDialog(subject.subject)" 
               title="Add links to this section"
             >
-              <i class="fas fa-plus"></i>
+              <font-awesome-icon icon="plus" />
             </button>
           </div>
           <div class="links-list">
@@ -103,11 +103,13 @@
 
 <script>
 import BulkLinkAdder from './components/BulkLinkAdder.vue'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
 export default {
   name: 'App',
   components: {
-    BulkLinkAdder
+    BulkLinkAdder,
+    FontAwesomeIcon
   },
   data() {
     return {
