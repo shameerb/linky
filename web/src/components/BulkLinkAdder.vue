@@ -1,7 +1,19 @@
 <template>
-  <div class="bulk-link-dialog">
+  <div class="bulk-link-dialog" @click.self="$emit('close')">
     <div class="dialog-content">
+      <button class="close-btn" @click="$emit('close')">×</button>
       <h3>Add Bulk Links</h3>
+      
+      <div class="subject-select">
+        <label>Select Subject (optional)</label>
+        <select v-model="selectedSubject" class="subject-dropdown">
+          <option value="">New Section (Today's Date)</option>
+          <option v-for="subject in availableSubjects" :key="subject" :value="subject">
+            {{ subject }}
+          </option>
+        </select>
+      </div>
+
       <p class="help-text">Enter links in markdown format:</p>
       <pre class="format-example">- [link title](link url)
 - [another title](another url)</pre>
@@ -28,25 +40,45 @@ export default {
       type: String,
       required: true
     },
-    currentSubject: {
-      type: String,
-      required: true
+    availableSubjects: {
+      type: Array,
+      default: () => []
     }
   },
   data() {
     return {
-      linksText: ''
+      linksText: '',
+      selectedSubject: ''
     }
   },
   methods: {
+    parseLinks(text) {
+      const links = []
+      const lines = text.split('\n')
+      const linkRegex = /\[(.*?)\]\((.*?)\)/
+
+      for (const line of lines) {
+        if (line.trim()) {
+          const matches = line.match(linkRegex)
+          if (matches && matches.length === 3) {
+            links.push({
+              title: matches[1].trim(),
+              url: matches[2].trim()
+            })
+          }
+        }
+      }
+      return links
+    },
+
     async addLinks() {
       if (!this.linksText.trim()) return
 
-      console.log('Adding bulk links:', {
-        filename: this.currentFile,
-        subject: this.currentSubject,
-        contentLength: this.linksText.length
-      })
+      const links = this.parseLinks(this.linksText)
+      if (links.length === 0) {
+        alert('No valid links found. Please check the format.')
+        return
+      }
 
       try {
         const response = await fetch('/api/bulk_links', {
@@ -56,11 +88,10 @@ export default {
           },
           body: JSON.stringify({
             filename: this.currentFile,
-            content: this.linksText
+            subject: this.selectedSubject || new Date().toLocaleDateString(),
+            links: links
           })
         })
-
-        console.log('Response status:', response.status)
 
         if (!response.ok) {
           const errorText = await response.text()
@@ -96,11 +127,35 @@ export default {
 
 .dialog-content {
   background: white;
-  padding: 20px;
+  padding: 30px;
   border-radius: 8px;
   width: 90%;
   max-width: 600px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.close-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: #f0f0f0;
+  color: #333;
 }
 
 .dialog-content h3 {
@@ -132,6 +187,7 @@ textarea {
   font-family: monospace;
   resize: vertical;
   margin-bottom: 15px;
+  box-sizing: border-box;
 }
 
 textarea:focus {
@@ -176,5 +232,31 @@ textarea:focus {
 .add-btn:disabled {
   background: #ccc;
   cursor: not-allowed;
+}
+
+.subject-select {
+  margin-bottom: 15px;
+}
+
+.subject-select label {
+  display: block;
+  margin-bottom: 5px;
+  color: #666;
+  font-size: 0.9em;
+}
+
+.subject-dropdown {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 14px;
+  margin-bottom: 15px;
+}
+
+.subject-dropdown:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
 }
 </style>

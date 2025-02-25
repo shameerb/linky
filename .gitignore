@@ -30,8 +30,7 @@ node_modules/
 .DS_Store
 
 # Build and temp directories
-backend/bin/
-backend/assets/assets/
+bin/
 .vite/
 **/deps_temp*/
 
@@ -44,3 +43,4 @@ backend/assets/assets/
 
 # Application specific
 Links/
+internal/static/dist

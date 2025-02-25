@@ -58,19 +58,18 @@
         <div v-for="subject in filteredSubjects" :key="subject.subject" class="subject-group">
           <div class="subject-header">
             <div class="subject">{{ subject.subject }}</div>
-            <button 
-              class="add-to-subject-btn" 
-              @click="openBulkAddDialog(subject.subject)" 
-              title="Add links to this section"
-            >
-              <font-awesome-icon icon="plus" />
-            </button>
           </div>
           <div class="links-list">
-            <div v-for="link in subject.links" 
-                :key="link.url" 
-                class="link-item"
-                :class="{ checked: link.selected }">
+            <div 
+              v-for="(link, index) in subject.links" 
+              :key="link.url" 
+              class="link-item"
+              :class="{ selected: link.selected, focused: focusedLinkIndex === index }"
+              :tabindex="0"
+              :data-url="link.url"
+              @focus="focusedLinkIndex = index"
+              @blur="focusedLinkIndex = -1"
+            >
               <div class="checkbox-wrapper">
                 <input 
                   type="checkbox" 
@@ -79,7 +78,7 @@
                 >
               </div>
               <p>
-                <a :href="link.url" target="_blank">{{ link.title }}</a>
+                <a :href="link.url" target="_blank" @click.prevent="openLink(link)">{{ link.title }}</a>
               </p>
             </div>
           </div>
@@ -94,9 +93,22 @@
     <BulkLinkAdder
       v-if="showBulkDialog"
       :current-file="currentFile"
-      :current-subject="currentSubject"
+      :available-subjects="subjects.map(s => s.subject)"
       @links-added="handleLinksAdded"
       @close="showBulkDialog = false"
+    />
+
+    <!-- Help button -->
+    <button 
+      class="help-button" 
+      @click="showHelp = true"
+      title="Keyboard Shortcuts"
+    >?</button>
+
+    <!-- Help dialog -->
+    <KeyboardShortcuts 
+      :show="showHelp"
+      @close="showHelp = false"
     />
   </div>
 </template>
@@ -104,12 +116,14 @@
 <script>
 import BulkLinkAdder from './components/BulkLinkAdder.vue'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import KeyboardShortcuts from './components/KeyboardShortcuts.vue'
 
 export default {
   name: 'App',
   components: {
     BulkLinkAdder,
-    FontAwesomeIcon
+    FontAwesomeIcon,
+    KeyboardShortcuts
   },
   data() {
     return {
@@ -119,7 +133,19 @@ export default {
       searchQuery: '',
       filteredSubjects: [],
       showBulkDialog: false,
-      currentSubject: ''
+      currentSubject: '',
+      focusedLinkIndex: -1,
+      currentSubjectIndex: -1,
+      showHelp: false,
+      keyboardShortcuts: {
+        'x': 'Toggle selection',
+        'Enter': 'Open link in new tab',
+        'Delete': 'Delete selected links',
+        'Shift + #': 'Delete selected links',
+        'ArrowUp/k': 'Previous link',
+        'ArrowDown/j': 'Next link',
+        'c': 'Copy selected links',
+      }
     }
   },
   computed: {
@@ -141,7 +167,10 @@ export default {
   mounted() {
     this.loadFiles()
     
-    // Add keyboard shortcuts
+    // Add global keyboard event listener
+    document.addEventListener('keydown', this.handleGlobalKeydown)
+
+    // Add keyboard shortcuts for file and search focus
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault()
@@ -151,6 +180,23 @@ export default {
         document.getElementById('search-input').focus()
       }
     })
+
+    // Add global shortcut for help panel
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '?' && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        this.showHelp = !this.showHelp
+      }
+    })
+
+    // Focus first link after loading
+    this.$nextTick(() => {
+      this.focusFirstLink()
+    })
+  },
+  beforeUnmount() {
+    // Clean up event listeners
+    document.removeEventListener('keydown', this.handleGlobalKeydown)
   },
   methods: {
     async loadFiles() {
@@ -188,6 +234,11 @@ export default {
         })
         this.searchLinks(this.searchQuery)
         this.updateUrl(this.currentFile, this.searchQuery)
+        
+        // Focus first link after loading
+        this.$nextTick(() => {
+          this.focusFirstLink()
+        })
       } catch (error) {
         console.error('Error loading links:', error)
       }
@@ -356,7 +407,119 @@ export default {
     openBulkAddDialog(subject) {
       this.currentSubject = subject
       this.showBulkDialog = true
-    }
+    },
+    handleGlobalKeydown(e) {
+      // Skip if we're in an input field
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+      if (e.shiftKey) {
+        switch (e.key) {
+          case '#':
+            e.preventDefault()
+            this.deleteSelected()
+            break
+          case 'C':
+            e.preventDefault()
+            this.copyFilteredLinks()
+            break
+          case 'N':
+            e.preventDefault()
+            this.openBulkAddDialog('')
+            break
+        }
+        return
+      }
+
+      switch (e.key) {
+        case 'x':
+          e.preventDefault()
+          // Get the currently focused link element
+          const focusedElement = document.activeElement
+          if (focusedElement && focusedElement.classList.contains('link-item')) {
+            // Find the link data that corresponds to this element
+            const url = focusedElement.getAttribute('data-url')
+            const link = this.subjects
+              .flatMap(subject => subject.links)
+              .find(link => link.url === url)
+            
+            if (link) {
+              link.selected = !link.selected
+              this.onCheckboxChange(link)
+            }
+          }
+          break
+        case 'Enter':
+          e.preventDefault()
+          if (this.selectedCount > 0) {
+            this.openSelectedLinks()
+          } else {
+            this.openLink(this.getVisibleLinks()[this.focusedLinkIndex])
+          }
+          break
+        case 'ArrowDown':
+        case 'j':
+          e.preventDefault()
+          this.focusNextLink(this.getAllLinks().indexOf(e.target))
+          break
+        case 'ArrowUp':
+        case 'k':
+          e.preventDefault()
+          this.focusPreviousLink(this.getAllLinks().indexOf(e.target))
+          break
+        case 'Delete':
+          e.preventDefault()
+          this.deleteSelected()
+          break
+      }
+    },
+    openLink(link) {
+      window.open(link.url, '_blank')
+    },
+    openSelectedLinks() {
+      const selectedLinks = this.subjects
+        .flatMap(subject => 
+          subject.links.filter(link => link.selected)
+        )
+      
+      selectedLinks.forEach(link => {
+        window.open(link.url, '_blank')
+      })
+    },
+    focusNextLink(currentIndex) {
+      const allLinks = this.getAllLinks()
+      if (allLinks.length === 0) return
+
+      const nextIndex = (currentIndex + 1) % allLinks.length
+      allLinks[nextIndex]?.focus()
+    },
+    focusPreviousLink(currentIndex) {
+      const allLinks = this.getAllLinks()
+      if (allLinks.length === 0) return
+
+      const prevIndex = currentIndex - 1 < 0 ? allLinks.length - 1 : currentIndex - 1
+      allLinks[prevIndex]?.focus()
+    },
+    getAllLinks() {
+      return Array.from(document.querySelectorAll('.link-item'))
+        .filter(link => {
+          const style = window.getComputedStyle(link)
+          return style.display !== 'none' && style.visibility !== 'hidden'
+        })
+    },
+    focusFirstLink() {
+      const firstLink = this.getAllLinks()[0]
+      if (firstLink) {
+        firstLink.focus()
+      }
+    },
+    getVisibleLinks() {
+      return this.subjects
+        .flatMap(subject => subject.links)
+        .filter(link => {
+          const style = window.getComputedStyle(document.querySelector(`.link-item[data-url="${link.url}"]`))
+          return style.display !== 'none' && style.visibility !== 'hidden'
+        })
+    },
   },
   watch: {
     currentFile() {
@@ -543,8 +706,11 @@ body {
   align-items: center;
   padding: 5px 0;
   border-bottom: 1px solid var(--border-color);
+  border-left: 3px solid transparent;
   overflow: hidden;
   width: 100%;
+  outline: none;
+  transition: all 0.2s ease;
 }
 
 .link-item:last-child {
@@ -607,8 +773,20 @@ body {
   background-color: #D3D3D3;
 }
 
-.link-item.checked a {
-  text-decoration: line-through;
+.link-item.selected {
+  background-color: rgba(52, 152, 219, 0.1);
+}
+
+.link-item.selected:hover {
+  background-color: rgba(52, 152, 219, 0.15);
+}
+
+.link-item.selected:focus {
+  background-color: rgba(52, 152, 219, 0.2);
+}
+
+.link-item.selected a {
+  text-decoration: none;
 }
 
 .no-links {
@@ -642,4 +820,128 @@ body {
   font-size: 14px;
 }
 
+/* Add styles for keyboard focus */
+.link-item:focus {
+  background-color: rgba(52, 152, 219, 0.08);
+  border-left: 3px solid rgba(52, 152, 219, 0.5);
+}
+
+/* Optional: Add a subtle left border to indicate focus */
+.link-item {
+  transition: background-color 0.2s ease, border-left-color 0.2s ease;
+}
+
+/* Make sure the hover state is distinct but complementary */
+.link-item:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Ensure the focus state is visible even when link is selected */
+.link-item.selected:focus {
+  border-left: 3px solid rgba(52, 152, 219, 0.5);
+}
+
+/* Optional: Add a help tooltip for keyboard shortcuts */
+.keyboard-shortcuts-help {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 15px rgba(0,0,0,0.2);
+  font-size: 0.9em;
+  color: #666;
+  max-width: 400px;
+  z-index: 1000;
+}
+
+.shortcuts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.shortcuts-header h3 {
+  margin: 0;
+  color: var(--secondary-color);
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shortcut-item kbd {
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid #ddd;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+  font-family: monospace;
+  font-size: 0.9em;
+  min-width: 20px;
+  text-align: center;
+}
+
+.shortcut-item span {
+  flex: 1;
+}
+
+.keyboard-shortcuts-help .close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 5px;
+  color: #666;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.keyboard-shortcuts-help .close-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.help-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #3498db;
+  color: white;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: all 0.2s;
+}
+
+.help-button:hover {
+  background: #2980b9;
+  transform: scale(1.05);
+}
+
+.help-button:active {
+  transform: scale(0.95);
+}
 </style>

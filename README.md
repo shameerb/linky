@@ -147,29 +147,26 @@ kill <PID>
 - Labels/Tags links
 - Link to sheets for organization management - books, courses
 
+### Fixes
+- [ ] Fix the makefile. Currently the build, run and install scripts are not clean
+- [ ] unique identifier for links and file
+- [ ] move the data to a db instead of file
+- [ ] feature to archive a link once read
+- [ ] quick move to subject / subject search
+- [ ] Public url
+    - [ ] cheap domain
+    - [ ] add authentication, authorization
+    - [ ] readonly mode
+
 ### Enhancements
-#### Immediate
-- way to use keyboards to move cursor, open tabs, select links, delete
-- Shortcuts
-    - x - select
-    - shift + 3 (#) - delete
-- copy links from current window to the page with timestamp as subject
-- add links in bulk
-- unique identifier for links and file
-- saved links into a datastore or file (factory pattern)
-    - move the data to a db instead of file
-- feature to archive a link once read
-- view to show only a limited links per page if necessary. (analysis paralysis)
-- change to vuejs app
-- Public url
-    - deploy to a public url
-    - authentication
 - Feature Additions
-    - ability to add bulk links
-    - add tags for filtering
-    - select only 1 subject
-    - combine most links to a single file
-    - backed by database instead of md file. (support both)
-    - books list
-        - only categories and links. Sourced from where? how to read from browser on mobile ?
-    - pagination
+  - share view of a list of selected links to others
+  - add tags for filtering
+  - combine most links to a single file
+  - backed by database instead of md file. (support both)
+  - pagination
+- Bugs
+  - concurrency : writes will not work for multiple users properly.
+  - file path validation
+  - error handling in delete links. Should safeguard the file (possibly a transaction with rollback for corruption of file). Datastore seems much safer.
+  - 

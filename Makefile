@@ -1,62 +1,60 @@
-.PHONY: build install run clean dev prod docker-build docker-run
+.PHONY: build run dev clean frontend-dev backend-dev install
 
-# Default markdown directory if not set
-MARKDOWN_DIR ?= $(PWD)/markdown
-BINARY_NAME=mde
-GO_PACKAGE=./backend
+# Build settings
+BINARY_NAME=linky
+WEB_DIR=web
+STATIC_DIR=internal/static
 
-# Frontend commands
-frontend-install:
-	cd frontend && npm install
+# Installation settings
+GOBIN ?= $(shell go env GOPATH)/bin
 
-frontend-build: frontend-install
-	cd frontend && npm run build
+# Development settings
+DEV_PORT=8080
+MARKDOWN_DIR=./Links
 
+build: build-frontend build-backend
+
+build-frontend:
+	@echo "Building frontend..."
+	cd $(WEB_DIR) && npm install && npm run build
+	@echo "Copying frontend dist to static..."
+	mkdir -p internal/static/dist
+	cp -r $(WEB_DIR)/dist/* internal/static/dist/
+
+build-backend:
+	@echo "Building backend..."
+	go build -o bin/$(BINARY_NAME) cmd/server/main.go
+
+# Install the binary to Go bin directory
+install: build
+	@echo "Installing $(BINARY_NAME) to $(GOBIN)..."
+	cp bin/$(BINARY_NAME) $(GOBIN)/
+	@echo "Installation complete. Make sure $(GOBIN) is in your PATH"
+	@echo "You can now run '$(BINARY_NAME)' from anywhere"
+
+run: build
+	@echo "Running server..."
+	MARKDOWN_DIR=$(MARKDOWN_DIR) ./bin/$(BINARY_NAME)
+
+# Development commands
 frontend-dev:
-	cd frontend && npm run dev
-
-# Backend commands
-backend-build: frontend-build
-	# cd backend && mkdir -p static && cp -r ../frontend/dist/* static/
-	cd backend && GO_ENV=production go build -o bin/$(BINARY_NAME) main.go
+	@echo "Starting frontend development server..."
+	cd $(WEB_DIR) && npm run dev
 
 backend-dev:
-	cd backend && MARKDOWN_DIR=$(MARKDOWN_DIR) go run main.go
+	@echo "Starting backend development server..."
+	MARKDOWN_DIR=$(MARKDOWN_DIR) go run cmd/server/main.go
 
-backend-prod:
-	cd backend && GO_ENV=production MARKDOWN_DIR=$(MARKDOWN_DIR) go run main.go
-
-# Development mode
+# Run both frontend and backend in development mode
 dev:
-	make frontend-install
 	@echo "Starting development servers..."
-	@echo "Frontend will be available at http://localhost:3000"
+	@echo "Frontend will be available at http://localhost:8080"
 	@echo "Backend API will be available at http://localhost:8080"
-	@(trap 'kill 0' SIGINT; make backend-run-dev & make frontend-dev)
-
-# Production mode
-prod: backend-build
-	@echo "Starting production server at http://localhost:8080"
-	cd backend && GO_ENV=production MARKDOWN_DIR=$(MARKDOWN_DIR) ./bin/$(BINARY_NAME)
-
-# Install binary using Go's standard approach
-install: frontend-build
-	# cd backend && mkdir -p static && cp -r ../frontend/dist/* static/
-	cd backend && GO_ENV=production go install
-	@echo "Installed $(BINARY_NAME) using go install"
-	@echo "Make sure your Go bin directory is in your PATH"
+	@(trap 'kill 0' SIGINT; make backend-dev & make frontend-dev)
 
 clean:
-	rm -rf backend/bin
-	rm -rf backend/dist
-	rm -rf frontend/node_modules
-	rm -rf frontend/dist
-	# rm -rf backend/static
-
-# Docker commands
-docker-build:
-	docker build -t linky:latest .
-
-docker-run:
-	mkdir -p $(MARKDOWN_DIR)
-	docker run -p 8080:8080 -v $(MARKDOWN_DIR):/data/markdown linky:latest
+	@echo "Cleaning up..."
+	rm -rf bin
+	rm -rf internal/static/dist
+	rm -rf $(WEB_DIR)/dist
+	rm -rf $(WEB_DIR)/node_modules

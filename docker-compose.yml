@@ -1,14 +1,12 @@
 version: '3.8'
 
 services:
-  linky:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  app:
+    build: .
     ports:
       - "8080:8080"
-    volumes:
-      - ${MARKDOWN_DIR:-./markdown}:/data/markdown
     environment:
-      - MARKDOWN_DIR=/data/markdown
+      - MARKDOWN_DIR=/data/links
+    volumes:
+      - ./Links:/data/links
     restart: unless-stopped
