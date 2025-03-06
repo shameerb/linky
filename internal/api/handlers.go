@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"io/fs"
-	"log"
 	"net/http"
 
 	"markdown-editor/internal/models"
@@ -21,11 +20,31 @@ func NewHandler(s store.Store) *Handler {
 	return &Handler{store: s}
 }
 
+// Add CORS middleware
+func CORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Call the next handler
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (h *Handler) RegisterRoutes(r *mux.Router) {
-	r.HandleFunc("/files", h.listFiles).Methods("GET")
-	r.HandleFunc("/file/{filename}", h.getFile).Methods("GET")
-	r.HandleFunc("/delete_links", h.deleteLinks).Methods("POST")
-	r.HandleFunc("/bulk_links", h.addBulkLinks).Methods("POST")
+	// Don't apply CORS middleware here since it's already applied to the main router
+	r.HandleFunc("/files", h.listFiles).Methods("GET", "OPTIONS")
+	r.HandleFunc("/file/{filename}", h.getFile).Methods("GET", "OPTIONS")
+	r.HandleFunc("/delete_links", h.deleteLinks).Methods("POST", "OPTIONS")
+	r.HandleFunc("/bulk_links", h.addBulkLinks).Methods("POST", "OPTIONS")
 }
 
 func (h *Handler) StaticFiles() fs.FS {
@@ -116,17 +135,16 @@ func (h *Handler) deleteLinks(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) addBulkLinks(w http.ResponseWriter, r *http.Request) {
 	var req models.BulkLinksRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Error decoding request body: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	err := h.store.AddBulkLinks(req.Filename, req.Subject, h.toBulkStoreLinks(req.Links))
 	if err != nil {
-		log.Printf("Error adding bulk links: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }

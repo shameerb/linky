@@ -36,6 +36,9 @@ func main() {
 	// Initialize handlers
 	handler := api.NewHandler(mdStore)
 
+	// Apply CORS middleware to the entire router
+	r.Use(api.CORSMiddleware)
+
 	// API routes
 	apiRouter := r.PathPrefix("/api").Subrouter()
 	handler.RegisterRoutes(apiRouter)
