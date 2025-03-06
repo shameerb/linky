@@ -36,6 +36,10 @@
           <h4>Actions</h4>
           <div class="shortcut-item">
             <kbd>Enter</kbd>
+            <span>Open focused link</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Shift</kbd> + <kbd>|</kbd>
             <span>Open selected links</span>
           </div>
           <div class="shortcut-item">
