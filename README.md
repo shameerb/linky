@@ -148,15 +148,25 @@ kill <PID>
 - Link to sheets for organization management - books, courses
 
 ### Fixes
+- [ ] Allow adding a new subject in add function. Default to date.
+- [ ] The add function doesnt add to a subject which already exists
+- [ ] Move backend data to a database instead of a file
+  - [ ] add concurrency features for scalability
+- [ ] supabase for auth + data online
+- [ ] basic
+  - [ ] the search functionality doesnt score properly because of subject categorization
+  - [ ] should allow for full keyword search using ""
+- [ ] labels instead of subjects. makes it easier to add and filter. can filter with multiple tags. 
+  - [ ] should allow to search and add labels as well.
 - [ ] Fix the makefile. Currently the build, run and install scripts are not clean
 - [ ] unique identifier for links and file
-- [ ] move the data to a db instead of file
 - [ ] feature to archive a link once read
 - [ ] quick move to subject / subject search
 - [ ] Public url
     - [ ] cheap domain
     - [ ] add authentication, authorization
     - [ ] readonly mode
+    - [ ] logging
 
 ### Enhancements
 - Feature Additions
@@ -165,8 +175,8 @@ kill <PID>
   - combine most links to a single file
   - backed by database instead of md file. (support both)
   - pagination
-- Bugs
   - concurrency : writes will not work for multiple users properly.
   - file path validation
   - error handling in delete links. Should safeguard the file (possibly a transaction with rollback for corruption of file). Datastore seems much safer.
+  - before production - logging, auth, rate limits, circuit breaker, user management, cookie management, caching etc.
   - 
