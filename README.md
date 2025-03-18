@@ -162,11 +162,23 @@ kill <PID>
 - [ ] unique identifier for links and file
 - [ ] feature to archive a link once read
 - [ ] quick move to subject / subject search
-- [ ] Public url
+- [ ] Production
     - [ ] cheap domain
     - [ ] add authentication, authorization
     - [ ] readonly mode
     - [ ] logging
+
+### **Quick Summary Checklist:**
+
+| Category                     | Tasks                                              |
+|------------------------------|----------------------------------------------------|
+| **Authentication & Security**| HTTPS, JWT/OAuth2, Password Hashing, Rate Limiting |
+| **Database**                 | Backup, Security, Migration                        |
+| **Infrastructure**           | Docker, Cloud Hosting, CI/CD Pipeline              |
+| **Logging & Monitoring**     | Structured Logs, Monitoring Tools                  |
+| **Scalability**              | Load Balancing, Caching                            |
+| **Compliance**               | GDPR, Privacy Policies, Audit Logging              |
+| **Documentation**            | API Docs, Operational Playbooks                    |
 
 ### Enhancements
 - Feature Additions
