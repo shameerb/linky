@@ -35,17 +35,18 @@ func (m *MarkdownStore) ListFiles() ([]string, error) {
 	return filenames, nil
 }
 
-func (m *MarkdownStore) GetLinks(filename string) ([]models.Subject, error) {
+func (m *MarkdownStore) GetLinks(filename string) ([]models.LegacySubject, error) {
 	file, err := os.Open(filepath.Join(m.baseDir, filename))
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var subjects []models.Subject
-	var currentSubject *models.Subject
+	var subjects []models.LegacySubject
+	var currentSubject *models.LegacySubject
 	linkRegex := regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
 	scanner := bufio.NewScanner(file)
+	linkID := 0
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -53,16 +54,18 @@ func (m *MarkdownStore) GetLinks(filename string) ([]models.Subject, error) {
 			if currentSubject != nil {
 				subjects = append(subjects, *currentSubject)
 			}
-			currentSubject = &models.Subject{
+			currentSubject = &models.LegacySubject{
 				Subject: strings.TrimSpace(strings.TrimPrefix(line, "### ")),
 			}
 		} else if strings.HasPrefix(line, "-") {
 			if currentSubject == nil {
-				currentSubject = &models.Subject{Subject: "Others"}
+				currentSubject = &models.LegacySubject{Subject: "Others"}
 			}
 			matches := linkRegex.FindStringSubmatch(line)
 			if len(matches) == 3 {
-				currentSubject.Links = append(currentSubject.Links, models.Link{
+				linkID++
+				currentSubject.Links = append(currentSubject.Links, models.LegacyLink{
+					ID:    fmt.Sprintf("%s-%d", filename, linkID),
 					Title: matches[1],
 					URL:   matches[2],
 				})
@@ -77,7 +80,7 @@ func (m *MarkdownStore) GetLinks(filename string) ([]models.Subject, error) {
 	return subjects, scanner.Err()
 }
 
-func (m *MarkdownStore) AddBulkLinks(filename string, subject string, links []models.Link) error {
+func (m *MarkdownStore) AddBulkLinks(filename string, subject string, links []models.LegacyLink) error {
 	filePath := filepath.Join(m.baseDir, filename)
 	content, err := os.ReadFile(filePath)
 	if err != nil && !os.IsNotExist(err) {
@@ -105,7 +108,7 @@ func (m *MarkdownStore) AddBulkLinks(filename string, subject string, links []mo
 	return os.WriteFile(filePath, []byte(builder.String()), 0644)
 }
 
-func (m *MarkdownStore) DeleteLinks(filename string, links []models.Link) error {
+func (m *MarkdownStore) DeleteLinks(filename string, links []models.LegacyLink) error {
 	filePath := filepath.Join(m.baseDir, filename)
 	content, err := os.ReadFile(filePath)
 	if err != nil {

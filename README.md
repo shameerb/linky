@@ -36,10 +36,71 @@ markdown-editor-go/
 ```
 
 ### Configuration
-The application requires one environment variable:
-- `MARKDOWN_DIR`: Directory where markdown files are stored
-  - Default: `./markdown` in the project root
-  - Can be set to any accessible directory path
+
+#### Environment Variables
+
+The application supports the following environment variables:
+
+- **`STORAGE_TYPE`** - Storage backend to use:
+  - `file` (default) - File/markdown storage
+  - `sqlite` - SQLite database
+  - `postgres` - PostgreSQL database
+
+- **`DB_PATH`** - Path to SQLite database file
+  - Default: `./linky.db`
+  - Only used when `STORAGE_TYPE=sqlite`
+
+- **`MARKDOWN_DIR`** - Directory where markdown files are stored
+  - Default: `./Links`
+  - Only used when `STORAGE_TYPE=file`
+
+- **`PORT`** - Server port
+  - Default: `8080`
+
+- **`JWT_SECRET`** - JWT secret for authentication
+  - Default: `your-secret-key-change-this-in-production`
+  - **Important:** Change this in production!
+
+- **`GO_ENV`** - Environment mode
+  - Set to `production` for production mode
+
+#### Storage Backends
+
+Linky supports multiple storage backends. Choose the one that fits your needs:
+
+##### 1. File Storage (Default)
+Uses markdown files directly. Best for personal use and easy backup.
+
+```bash
+# Uses ./Links directory by default
+make run
+
+# Or with custom directory
+STORAGE_TYPE=file MARKDOWN_DIR=/path/to/links make run
+```
+
+##### 2. SQLite Storage
+Uses SQLite database. Best for better performance and multi-user scenarios.
+
+**Step 1:** Run migration to import markdown files:
+```bash
+go run cmd/migrate/main.go \
+  -markdown-dir ./Links \
+  -db-path ./linky.db \
+  -email "your-email@example.com"
+```
+
+**Step 2:** Start server with SQLite:
+```bash
+STORAGE_TYPE=sqlite DB_PATH=./linky.db make run
+```
+
+##### 3. PostgreSQL Storage
+Uses PostgreSQL database. Best for production and large-scale deployments.
+
+```bash
+STORAGE_TYPE=postgres DATABASE_URL="postgres://user:pass@host:5432/dbname" make run
+```
 
 ### Running the Application
 
@@ -101,6 +162,197 @@ make backend-build
 
 # Clean build artifacts
 make clean
+```
+
+### Data Migration
+
+Linky provides migration scripts to import your markdown links into different storage backends.
+
+#### Migrate to SQLite Database
+
+Import markdown files from the `Links` folder into SQLite database:
+
+```bash
+go run cmd/migrate/main.go \
+  -markdown-dir ./Links \
+  -db-path ./linky.db \
+  -email "your-email@example.com"
+```
+
+**Parameters:**
+- `-markdown-dir` - Path to markdown files (default: `./Links`)
+- `-db-path` - Path to SQLite database file (default: `./linky.db`)
+- `-email` - Email for user account (required)
+- `-password` - Password for user account (default: `password`, optional)
+
+**Output Example:**
+```
+============================================================
+Migration completed successfully!
+============================================================
+Database: ./linky.db
+User: shameer789@gmail.com
+Password: password
+
+------------------------------------------------------------
+SUMMARY
+------------------------------------------------------------
+  ai                     5 topics    120 links
+  jobs                   2 topics     45 links
+  learn                  8 topics    230 links
+  memfoldai              3 topics     89 links
+  now                    4 topics     67 links
+  python                 6 topics    145 links
+  reading                2 topics     34 links
+  study                  7 topics    218 links
+------------------------------------------------------------
+Total: 8 subjects, 37 topics, 908 links
+============================================================
+```
+
+#### Migrate to File Store (JSON)
+
+Import markdown files into JSON-based file store:
+
+```bash
+go run cmd/migrate-to-filestore/main.go \
+  -markdown-dir ./Links \
+  -data-dir ./data
+```
+
+**Parameters:**
+- `-markdown-dir` - Path to markdown files (default: `./Links`)
+- `-data-dir` - Path to file store data directory (default: `./data`)
+
+**Note:** The file store migration uses a default user account with credentials:
+- Email: `shameer789@gmail.com`
+- Password: `password`
+
+### Installing as a System Binary
+
+For convenient access, you can install Linky as a system command:
+
+#### 1. Build and Install
+
+**Option A: Using Go Install (Recommended)**
+
+This installs to `~/go/bin/linky` which is automatically in your PATH if Go is properly configured:
+
+```bash
+cd /Users/shameer/Documents/work/projects/linky
+go install cmd/server/main.go
+
+# Verify installation
+which linky
+```
+
+Or add to your Makefile:
+```makefile
+.PHONY: install
+install:
+	@echo "Installing linky to ~/go/bin..."
+	@go install cmd/server/main.go
+	@echo "✅ linky installed successfully!"
+```
+
+Then run: `make install`
+
+**Option B: Manual Install to /usr/local/bin**
+
+If you prefer installing to a system directory:
+
+```bash
+# Build the binary
+go build -o linky cmd/server/main.go
+
+# Install to /usr/local/bin
+sudo cp linky /usr/local/bin/
+
+# Verify installation
+which linky
+```
+
+#### 2. Create a Shell Function/Alias
+
+##### For Fish Shell
+
+Create `~/.config/fish/functions/run-linky.fish`:
+
+```fish
+function run-linky
+    set -x STORAGE_TYPE file
+    set -x MARKDOWN_DIR /Users/shameer/Dropbox/Links
+    set -x DISABLE_AUTH true
+    nohup linky > /dev/null 2>&1 &
+    echo "linky started with:"
+    echo "  STORAGE_TYPE=$STORAGE_TYPE"
+    echo "  MARKDOWN_DIR=$MARKDOWN_DIR"
+    echo "  DISABLE_AUTH=$DISABLE_AUTH"
+end
+```
+
+Then reload: `source ~/.config/fish/config.fish`
+
+Usage: `run-linky`
+
+##### For Bash/Zsh
+
+Add to `~/.bashrc` or `~/.zshrc`:
+
+```bash
+run-linky() {
+    export STORAGE_TYPE=file
+    export MARKDOWN_DIR=/Users/shameer/Dropbox/Links
+    export DISABLE_AUTH=true
+    nohup linky > /dev/null 2>&1 &
+    echo "linky started with:"
+    echo "  STORAGE_TYPE=$STORAGE_TYPE"
+    echo "  MARKDOWN_DIR=$MARKDOWN_DIR"
+    echo "  DISABLE_AUTH=$DISABLE_AUTH"
+}
+```
+
+Then reload: `source ~/.bashrc` (or `~/.zshrc`)
+
+Usage: `run-linky`
+
+#### 3. For SQLite Storage
+
+If using SQLite instead, first run the migration:
+
+```bash
+# Create data directory
+mkdir -p ~/.linky
+
+# Run migration
+go run cmd/migrate/main.go \
+  -markdown-dir /Users/shameer/Dropbox/Links \
+  -db-path ~/.linky/linky.db \
+  -email "shameer789@gmail.com"
+```
+
+Then update your shell function:
+```fish
+function run-linky
+    set -x STORAGE_TYPE sqlite
+    set -x DB_PATH ~/.linky/linky.db
+    set -x DISABLE_AUTH true
+    nohup linky > /dev/null 2>&1 &
+    echo "linky started with:"
+    echo "  STORAGE_TYPE=$STORAGE_TYPE"
+    echo "  DB_PATH=$DB_PATH"
+    echo "  DISABLE_AUTH=$DISABLE_AUTH"
+end
+```
+
+#### Managing the Background Process
+
+```bash
+# Find the process
+ps aux | grep linky
+
+# Stop linky
+pkill linky
 ```
 
 ### Accessing the Application

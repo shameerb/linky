@@ -41,7 +41,7 @@ export default defineConfig(({ command, mode }) => {
     }
   } else {
     // Production build settings
-    // config.build.outDir = '../backend/dist'
+    config.build.outDir = '../internal/static/dist'
     config.build.emptyOutDir = true
     config.build.manifest = true
   }

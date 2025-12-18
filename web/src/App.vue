@@ -1,104 +1,152 @@
 <!-- App.vue -->
 <template>
   <div class="app">
-    <div class="app-container">
-      <div class="controls">
-        <select v-model="currentFile" id="file-list">
-          <option value="">Select a file</option>
-          <option v-for="file in files" :key="file" :value="file">
-            {{ file }}
-          </option>
-        </select>
-        
-        <div class="search-container">
-          <input
-            type="text"
-            v-model="searchQuery"
-            @input="onSearchInput"
-            @keydown="handleSearchKeydown"
-            placeholder="Search links... (use subject:<name> to filter by subject)"
-            id="search-input"
-            ref="searchInput"
-          />
-          
-          <!-- Subject suggestions dropdown -->
-          <div v-if="showSubjectSuggestions && subjectSuggestions.length > 0" class="subject-suggestions">
-            <div 
-              v-for="(subject, index) in subjectSuggestions" 
-              :key="subject"
-              class="subject-suggestion"
-              :class="{ 'selected': index === selectedSuggestionIndex }"
-              @click="selectSubjectSuggestion(subject)"
-              @mouseover="selectedSuggestionIndex = index"
+    <!-- Show login if not authenticated -->
+    <Login v-if="!isAuthenticated" @login="handleLogin" />
+
+    <!-- Show main app if authenticated -->
+    <div v-else class="app-container">
+      <!-- Header with Linky title and logout -->
+      <div class="app-header">
+        <h1 class="app-title">Linky</h1>
+        <button class="logout-btn" @click="logout" title="Logout">
+          Logout
+        </button>
+      </div>
+
+      <div class="multi-select-controls">
+        <div class="action-controls">
+          <div class="control-buttons">
+            <input
+              type="checkbox"
+              id="select-all-btn"
+              title="Select All / Clear All"
+              @change="toggleAllFiltered"
+              :checked="allFilteredSelected"
             >
-              {{ subject }}
+            <button
+              id="delete-selected-btn"
+              title="Delete selected"
+              @click="deleteSelected"
+            >
+              <font-awesome-icon icon="trash-alt" />
+            </button>
+            <button
+              id="copy-filtered-btn"
+              title="Copy filtered"
+              @click="copyFilteredLinks"
+            >
+              <font-awesome-icon icon="copy" />
+            </button>
+            <button
+              id="bulk-add-btn"
+              title="Add bulk links to new section"
+              @click="openBulkAddDialog('')"
+              :disabled="!currentSubjectId"
+            >
+              <font-awesome-icon icon="plus" />
+            </button>
+          </div>
+
+          <div class="search-controls">
+            <select v-model="currentSubjectId" id="subject-list" @change="loadSubjectData">
+              <option value="">All Subjects</option>
+              <option v-for="subject in subjects" :key="subject.id" :value="subject.id">
+                {{ subject.name }}
+              </option>
+            </select>
+
+            <div class="search-container">
+              <input
+                type="text"
+                v-model="searchQuery"
+                @input="onSearchInput"
+                @keydown="handleSearchKeydown"
+                placeholder="Search links... (Use topic:<name>, OR, AND, & operators)"
+                id="search-input"
+                ref="searchInput"
+              />
+
+              <!-- Topic suggestions dropdown -->
+              <div v-if="showSubjectSuggestions && topicSuggestions.length > 0" class="subject-suggestions">
+                <div
+                  v-for="(topic, index) in topicSuggestions"
+                  :key="topic"
+                  class="subject-suggestion"
+                  :class="{ 'selected': index === selectedSuggestionIndex }"
+                  @click="selectSubjectSuggestion(topic)"
+                  @mouseover="selectedSuggestionIndex = index"
+                >
+                  {{ topic }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="count-info">
+            <span v-if="selectedFilteredCount > 0" class="selected-count">
+              Selected: {{ selectedFilteredCount }}
+            </span>
+            <span>Total: <span id="total-links">{{ filteredLinksCount }}</span></span>
+            <div class="settings-dropdown">
+              <button
+                id="settings-btn"
+                title="Settings"
+                @click="showSettings = !showSettings"
+              >
+                <font-awesome-icon icon="cog" />
+              </button>
+              <div v-if="showSettings" class="settings-menu">
+                <div class="settings-header">Compactness</div>
+                <button
+                  @click="setCompactness('small')"
+                  :class="{ active: compactness === 'small' }"
+                  class="settings-option"
+                >
+                  Small
+                </button>
+                <button
+                  @click="setCompactness('medium')"
+                  :class="{ active: compactness === 'medium' }"
+                  class="settings-option"
+                >
+                  Medium
+                </button>
+                <button
+                  @click="setCompactness('large')"
+                  :class="{ active: compactness === 'large' }"
+                  class="settings-option"
+                >
+                  Large
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div id="preview-wrapper">
-        <div class="main-content">
-          <div class="multi-select-controls">
-            <div class="control-buttons">
-              <input 
-                type="checkbox" 
-                id="select-all-btn" 
-                title="Select All / Clear All"
-                @change="toggleAllFiltered"
-                :checked="allFilteredSelected"
-              >
-              <button 
-                id="delete-selected-btn" 
-                title="Delete selected"
-                @click="deleteSelected"
-              >
-                <font-awesome-icon icon="trash-alt" />
-              </button>
-              <button 
-                id="copy-filtered-btn" 
-                title="Copy filtered"
-                @click="copyFilteredLinks"
-              >
-                <font-awesome-icon icon="copy" />
-              </button>
-              <button 
-                id="bulk-add-btn" 
-                title="Add bulk links to new section"
-                @click="openBulkAddDialog('')"
-              >
-                <font-awesome-icon icon="plus" />
-              </button>
-            </div>
-            <span class="count-info">
-              <span v-if="selectedFilteredCount > 0" class="selected-count">
-                Selected: {{ selectedFilteredCount }}
-              </span>
-              Total: <span id="total-links">{{ filteredLinksCount }}</span>
-            </span>
-          </div>
-
-          <div 
-            v-for="subject in filteredSubjects" 
-            :key="subject.subject" 
+      <div class="links-container" :class="`compact-${compactness}`">
+        <div
+            v-for="topic in filteredTopics"
+            :key="topic.id"
             class="subject-group"
-            :class="{ 'collapsed': isSubjectCollapsed(subject.subject) }"
+            :class="{ 'collapsed': isTopicCollapsed(topic.id) }"
           >
-            <div class="subject-header" @click="toggleSubjectCollapse(subject.subject)">
+            <div class="subject-header" @click="toggleTopicCollapse(topic.id)">
               <div class="collapse-icon">
-                {{ isSubjectCollapsed(subject.subject) ? '▶' : '▼' }}
+                {{ isTopicCollapsed(topic.id) ? '▶' : '▼' }}
               </div>
-              <div class="subject">{{ subject.subject }}</div>
-              <div class="link-count">({{ subject.links.length }})</div>
+              <div class="subject">{{ topic.name }}</div>
+              <div class="link-count">({{ topic.links.length }})</div>
             </div>
-            <div class="links-list" v-show="!isSubjectCollapsed(subject.subject)">
-              <div 
-                v-for="(link, index) in subject.links" 
-                :key="link.url" 
+            <div class="links-list" v-show="!isTopicCollapsed(topic.id)">
+              <div
+                v-for="(link, index) in topic.links"
+                :key="`${topic.id}-${link.id}`"
                 class="link-item"
                 :class="{ selected: link.selected, focused: focusedLinkIndex === index }"
                 :tabindex="0"
-                :data-url="link.url"
+                :data-link-id="link.id"
                 @focus="focusedLinkIndex = index"
                 @blur="focusedLinkIndex = -1"
               >
@@ -112,21 +160,22 @@
                 <p>
                   <a :href="link.url" target="_blank" @click.prevent="openLink(link)">{{ link.title }}</a>
                 </p>
+                <span v-if="link.topicName" class="topic-badge">{{ link.topicName }}</span>
               </div>
             </div>
           </div>
 
-          <div v-if="!hasLinks" class="no-links">
-            No links found
-          </div>
+        <div v-if="!hasLinks" class="no-links">
+          No links found
         </div>
       </div>
     </div>
 
     <BulkLinkAdder
       v-if="showBulkDialog"
-      :current-file="currentFile"
-      :available-subjects="subjects.map(s => s.subject)"
+      :current-subject-id="currentSubjectId"
+      :current-subject-name="currentSubjectName"
+      :available-topics="availableTopics"
       @links-added="handleLinksAdded"
       @close="showBulkDialog = false"
     />
@@ -155,27 +204,31 @@
 import BulkLinkAdder from './components/BulkLinkAdder.vue'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import KeyboardShortcuts from './components/KeyboardShortcuts.vue'
+import Login from './components/Login.vue'
 
 export default {
   name: 'App',
   components: {
     BulkLinkAdder,
     FontAwesomeIcon,
-    KeyboardShortcuts
+    KeyboardShortcuts,
+    Login
   },
   data() {
     return {
-      files: [],
-      subjects: [],
-      currentFile: '',
+      isAuthenticated: false,
+      user: null,
+      subjects: [], // List of subjects (top-level categories)
+      currentSubjectId: '', // Currently selected subject ID
+      topics: [], // Topics to display (flattened from all subjects or filtered)
       searchQuery: '',
-      filteredSubjects: [],
+      filteredTopics: [],
       showBulkDialog: false,
-      currentSubject: '',
+      currentTopic: '',
       focusedLinkIndex: -1,
-      currentSubjectIndex: -1,
+      currentTopicIndex: -1,
       showHelp: false,
-      currentSubjectFilter: '', // Subject filter
+      currentTopicFilter: '', // Topic filter (for search like "topic:python")
       showSubjectSuggestions: false,
       subjectSearchQuery: '',
       keyboardShortcuts: {
@@ -186,91 +239,112 @@ export default {
         'ArrowUp/k': 'Previous link',
         'ArrowDown/j': 'Next link',
       },
-      selectedSuggestionIndex: -1, // Track the currently selected suggestion
+      selectedSuggestionIndex: -1,
       notification: {
         show: false,
         message: '',
         type: 'info',
         timeout: null
       },
-      collapsedSubjects: new Set(), // Track which subjects are collapsed
+      collapsedTopics: new Set(), // Track which topics are collapsed
+      compactness: 'medium', // small, medium, large
+      showSettings: false,
     }
   },
   computed: {
     hasLinks() {
-      return this.subjects.some(subject => subject.links && subject.links.length > 0)
+      return this.topics.some(topic => topic.links && topic.links.length > 0)
     },
     selectedCount() {
-      return this.subjects.reduce((count, subject) => 
-        count + (subject.links ? subject.links.filter(link => link.selected).length : 0), 0)
+      return this.topics.reduce((count, topic) =>
+        count + (topic.links ? topic.links.filter(link => link.selected).length : 0), 0)
     },
     totalLinks() {
-      return this.subjects.reduce((count, subject) => 
-        count + (subject.links ? subject.links.length : 0), 0)
+      return this.topics.reduce((count, topic) =>
+        count + (topic.links ? topic.links.length : 0), 0)
     },
     allSelected() {
       return this.hasLinks && this.selectedCount === this.totalLinks
     },
-    availableSubjects() {
-      return this.subjects.map(s => s.subject).filter(Boolean)
+    availableTopics() {
+      return this.topics.map(t => t.name).filter(Boolean)
     },
-    // Extract the search part without the subject filter
-    searchQueryWithoutSubject() {
-      // Remove any existing subject: prefix
-      return this.searchQuery.replace(/subject:[^\s]+\s*/, '').trim()
+    currentSubjectName() {
+      if (!this.currentSubjectId) return ''
+      const subject = this.subjects.find(s => s.id == this.currentSubjectId)
+      return subject ? subject.name : ''
     },
-    // Get subject suggestions based on current input
-    subjectSuggestions() {
+    // Extract the search part without the topic filter
+    searchQueryWithoutTopic() {
+      // Remove any existing topic: prefix
+      return this.searchQuery.replace(/topic:[^\s]+\s*/, '').trim()
+    },
+    // Get topic suggestions based on current input
+    topicSuggestions() {
       if (!this.showSubjectSuggestions) return []
-      
-      // Extract the partial subject name after "subject:"
-      const match = this.searchQuery.match(/subject:([^&\s]*)/)
+
+      // Match topic: prefix
+      const match = this.searchQuery.match(/topic:([^&\s]*)/)
       if (!match) return []
-      
-      const partialSubject = match[1].toLowerCase()
-      if (!partialSubject) return this.availableSubjects
-      
-      // Filter subjects that match the partial input
-      return this.availableSubjects.filter(subject => 
-        subject.toLowerCase().includes(partialSubject)
+
+      const partialTopic = match[1].toLowerCase()
+      if (!partialTopic) return this.availableTopics
+
+      // Filter topics that match the partial input
+      return this.availableTopics.filter(topic =>
+        topic.toLowerCase().includes(partialTopic)
       )
     },
     // Update to count only filtered links
     filteredLinksCount() {
-      return this.filteredSubjects.reduce((count, subject) => 
-        count + (subject.links ? subject.links.length : 0), 0)
+      return this.filteredTopics.reduce((count, topic) =>
+        count + (topic.links ? topic.links.length : 0), 0)
     },
-    
+
     // Update to check if all filtered links are selected
     allFilteredSelected() {
       if (!this.hasFilteredLinks) return false
-      
-      const selectedFilteredCount = this.filteredSubjects.reduce((count, subject) => 
-        count + (subject.links ? subject.links.filter(link => link.selected).length : 0), 0)
-      
+
+      const selectedFilteredCount = this.filteredTopics.reduce((count, topic) =>
+        count + (topic.links ? topic.links.filter(link => link.selected).length : 0), 0)
+
       return selectedFilteredCount === this.filteredLinksCount
     },
-    
+
     // Add a computed property to check if there are any filtered links
     hasFilteredLinks() {
-      return this.filteredSubjects.some(subject => subject.links && subject.links.length > 0)
+      return this.filteredTopics.some(topic => topic.links && topic.links.length > 0)
     },
     selectedFilteredCount() {
-      return this.filteredSubjects.reduce((count, subject) => 
-        count + (subject.links ? subject.links.filter(link => link.selected).length : 0), 0)
+      return this.filteredTopics.reduce((count, topic) =>
+        count + (topic.links ? topic.links.filter(link => link.selected).length : 0), 0)
     }
   },
-  mounted() {
-    this.loadFiles()
-    
+  async mounted() {
+    // Check if auth is disabled on the server
+    await this.checkAuthStatus()
+
+    // Check if user is already logged in
+    this.checkAuth()
+
+    if (this.isAuthenticated) {
+      this.loadSubjects()
+    }
+
+    // Load compactness preference from localStorage
+    const savedCompactness = localStorage.getItem('compactness')
+    if (savedCompactness && ['small', 'medium', 'large'].includes(savedCompactness)) {
+      this.compactness = savedCompactness
+    }
+
     // Add global keyboard event listener
     document.addEventListener('keydown', this.handleGlobalKeydown)
 
-    // Add keyboard shortcuts for file and search focus
+    // Add keyboard shortcuts for subject and search focus
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault()
-        document.getElementById('file-list').focus()
+        document.getElementById('subject-list').focus()
       } else if (e.ctrlKey && e.key === 'f') {
         e.preventDefault()
         document.getElementById('search-input').focus()
@@ -285,8 +359,22 @@ export default {
       }
     })
 
+    // Add global shortcut for search
+    document.addEventListener('keydown', (e) => {
+      // Skip if we're already in an input field
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+      if (e.key === '/' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault()
+        document.getElementById('search-input').focus()
+      }
+    })
+
     // Close subject suggestions when clicking outside
     document.addEventListener('click', this.closeSubjectSuggestions)
+
+    // Close settings menu when clicking outside
+    document.addEventListener('click', this.closeSettings)
 
     // Focus first link after loading
     this.$nextTick(() => {
@@ -297,237 +385,432 @@ export default {
     // Clean up event listeners
     document.removeEventListener('keydown', this.handleGlobalKeydown)
     document.removeEventListener('click', this.closeSubjectSuggestions)
+    document.removeEventListener('click', this.closeSettings)
   },
   methods: {
-    async loadFiles() {
-      try {
-        const response = await fetch('/api/files')
-        const data = await response.json()
-        this.files = data
-        
-        // Check URL parameters
-        const urlParams = new URLSearchParams(window.location.search)
-        const fileParam = urlParams.get('file')
-        
-        // Set default file to now.md if it exists in the files list
-        if (fileParam && this.files.includes(fileParam)) {
-          this.currentFile = fileParam
-        } else if (this.files.includes('now.md')) {
-          this.currentFile = 'now.md'
-        } else if (this.files.length > 0) {
-          this.currentFile = this.files[0]
-        }
-        
-        if (this.currentFile) {
-          await this.loadLinks()
-        }
-        
-        // Check for subject filter and search in URL
-        const subjectParam = urlParams.get('subject')
-        const searchParam = urlParams.get('search')
-        
-        // Build search query from URL parameters
-        let newSearchQuery = ''
-        
-        if (subjectParam) {
-          this.currentSubjectFilter = subjectParam
-          newSearchQuery = `subject:${subjectParam}`
-        }
-        
-        if (searchParam) {
-          if (newSearchQuery) {
-            newSearchQuery += ` & ${searchParam}`
-          } else {
-            newSearchQuery = searchParam
-          }
-        }
-        
-        if (newSearchQuery) {
-          this.searchQuery = newSearchQuery
-          this.applyFilters()
-        }
-      } catch (error) {
-        console.error('Error loading files:', error)
+    checkAuth() {
+      const token = localStorage.getItem('token')
+      const userStr = localStorage.getItem('user')
+
+      if (token && userStr) {
+        this.isAuthenticated = true
+        this.user = JSON.parse(userStr)
+      } else {
+        this.isAuthenticated = false
+        this.user = null
       }
     },
-    async loadLinks() {
-      if (!this.currentFile) return
-      
+    async checkAuthStatus() {
       try {
-        const response = await fetch(`/api/file/${this.currentFile}`)
+        const response = await fetch('/api/auth/status')
+        if (!response.ok) return
+
         const data = await response.json()
-        this.subjects = data.data || []
-        // Initialize selected property for each link and ensure links array exists
-        this.subjects.forEach(subject => {
-          if (!subject.links) {
-            subject.links = []
+
+        // If auth is disabled, auto-login with default user
+        if (!data.authEnabled) {
+          const dummyToken = 'dev-mode-token'
+          const defaultUser = {
+            id: 1,
+            email: data.defaultUser.email
           }
-          subject.links.forEach(link => {
-            link.selected = false
-          })
+
+          localStorage.setItem('token', dummyToken)
+          localStorage.setItem('user', JSON.stringify(defaultUser))
+
+          this.isAuthenticated = true
+          this.user = defaultUser
+        }
+      } catch (error) {
+        console.error('Failed to check auth status:', error)
+      }
+    },
+    handleLogin(data) {
+      this.isAuthenticated = true
+      this.user = data.user
+      this.loadSubjects()
+      this.showNotification('Welcome back!', 'success')
+    },
+    logout() {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      this.isAuthenticated = false
+      this.user = null
+      this.subjects = []
+      this.topics = []
+      this.filteredTopics = []
+      this.showNotification('Logged out successfully', 'info')
+    },
+    getAuthHeader() {
+      const token = localStorage.getItem('token')
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    },
+    async loadSubjects() {
+      try {
+        const response = await fetch('/api/v2/subjects', {
+          headers: this.getAuthHeader()
         })
-        
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            this.logout()
+            return
+          }
+          throw new Error('Failed to load subjects')
+        }
+
+        this.subjects = await response.json() || []
+
+        // Restore state from URL parameters (subject and search)
+        this.loadFromUrl()
+
+        // Load all topics and links
+        await this.loadAllTopicsAndLinks()
+      } catch (error) {
+        console.error('Error loading subjects:', error)
+        this.showNotification('Error loading data', 'error')
+      }
+    },
+    async loadSubjectData() {
+      // Load topics and links for the currently selected subject, or all if none selected
+      // Clear existing data immediately
+      this.topics = []
+      this.filteredTopics = []
+
+      // Load new data
+      await this.loadAllTopicsAndLinks()
+
+      // Update URL to reflect subject change
+      this.updateUrl()
+    },
+    async loadAllTopicsAndLinks() {
+      try {
+        this.topics = []
+
+        // Filter subjects based on current selection
+        const subjectsToLoad = this.currentSubjectId
+          ? this.subjects.filter(s => s.id == this.currentSubjectId)
+          : this.subjects
+
+        // Load topics for each subject
+        for (const subject of subjectsToLoad) {
+          // Use subject NAME instead of ID
+          const topicsResponse = await fetch(`/api/v2/subjects/${encodeURIComponent(subject.name)}/topics`, {
+            headers: this.getAuthHeader()
+          })
+
+          if (!topicsResponse.ok) {
+            console.error('Failed to load topics for subject:', subject.name, 'Status:', topicsResponse.status)
+            continue
+          }
+
+          const topics = await topicsResponse.json() || []
+
+          // Load links for each topic
+          for (const topic of topics) {
+            // Use subject NAME and topic NAME instead of topic ID
+            const linksResponse = await fetch(`/api/v2/subjects/${encodeURIComponent(subject.name)}/topics/${encodeURIComponent(topic.name)}/links`, {
+              headers: this.getAuthHeader()
+            })
+
+            if (!linksResponse.ok) {
+              console.error('Failed to load links for topic:', topic.name, 'Status:', linksResponse.status)
+              continue
+            }
+
+            const links = await linksResponse.json() || []
+
+            // Initialize selected property for each link
+            links.forEach(link => {
+              link.selected = false
+              link.id = link.id.toString() // Ensure ID is string for consistency
+            })
+
+            topic.links = links
+            this.topics.push(topic)
+          }
+        }
+
         this.applyFilters()
-        
+
         // Focus first link after loading
         this.$nextTick(() => {
           this.focusFirstLink()
         })
       } catch (error) {
-        console.error('Error loading links:', error)
+        console.error('Error loading topics and links:', error)
+        this.showNotification('Error loading data', 'error')
       }
     },
     updateUrl() {
       const newUrl = new URL(window.location)
-      newUrl.searchParams.set('file', this.currentFile)
-      
-      // Update search parameter
-      if (this.searchQueryWithoutSubject) {
-        newUrl.searchParams.set('search', this.searchQueryWithoutSubject)
-      } else {
-        newUrl.searchParams.delete('search')
-      }
-      
-      // Update subject parameter
-      if (this.currentSubjectFilter) {
-        newUrl.searchParams.set('subject', this.currentSubjectFilter)
+
+      // Update subject parameter - use subject NAME not ID
+      if (this.currentSubjectId) {
+        const subject = this.subjects.find(s => s.id == this.currentSubjectId)
+        if (subject) {
+          newUrl.searchParams.set('subject', subject.name)
+        }
       } else {
         newUrl.searchParams.delete('subject')
       }
-      
+
+      // Update search parameter
+      if (this.searchQuery) {
+        newUrl.searchParams.set('search', this.searchQuery)
+      } else {
+        newUrl.searchParams.delete('search')
+      }
+
       window.history.pushState({}, '', newUrl)
     },
-    applyFilters() {
-      // Parse subject filter from search query
-      const subjectMatch = this.searchQuery.match(/subject:([^\s]+)/)
-      if (subjectMatch) {
-        this.currentSubjectFilter = subjectMatch[1]
-      } else {
-        this.currentSubjectFilter = ''
+    loadFromUrl() {
+      // Parse URL parameters and restore state
+      const urlParams = new URLSearchParams(window.location.search)
+
+      // Restore subject selection
+      const subjectName = urlParams.get('subject')
+      if (subjectName) {
+        const subject = this.subjects.find(s => s.name.toLowerCase() === subjectName.toLowerCase())
+        if (subject) {
+          this.currentSubjectId = subject.id
+        }
       }
-      
-      // Get search terms (everything after the subject: part if it exists)
+
+      // Restore search query
+      const search = urlParams.get('search')
+      if (search) {
+        this.searchQuery = search
+      }
+    },
+    applyFilters() {
+      // Parse topic filter from search query
+      const topicMatch = this.searchQuery.match(/topic:([^\s]+)/)
+      if (topicMatch) {
+        this.currentTopicFilter = topicMatch[1]
+      } else {
+        this.currentTopicFilter = ''
+      }
+
+      // Get search terms (everything after the topic: part if it exists)
       let searchTerms = ''
-      if (subjectMatch) {
-        // Extract everything after the subject: part
-        const afterSubject = this.searchQuery.substring(
-          this.searchQuery.indexOf(subjectMatch[0]) + subjectMatch[0].length
+      if (topicMatch) {
+        // Extract everything after the topic: part
+        const afterTopic = this.searchQuery.substring(
+          this.searchQuery.indexOf(topicMatch[0]) + topicMatch[0].length
         ).trim()
-        searchTerms = afterSubject
+        searchTerms = afterTopic
       } else {
         searchTerms = this.searchQuery.trim()
       }
-      
+
       // Apply filters
-      this.filterLinks(this.currentSubjectFilter, searchTerms)
-      
+      this.filterLinks(this.currentTopicFilter, searchTerms)
+
       // Update URL
       this.updateUrl()
     },
-    filterLinks(subjectFilter, searchTerms) {
-      // First filter by subject if needed
-      let filteredBySubject = this.subjects
-      if (subjectFilter) {
-        filteredBySubject = this.subjects.filter(subject => 
-          subject.subject === subjectFilter
+    filterLinks(topicFilter, searchTerms) {
+      // First filter by topic if needed
+      let filteredByTopic = this.topics
+      if (topicFilter) {
+        filteredByTopic = this.topics.filter(topic =>
+          topic.name.toLowerCase() === topicFilter.toLowerCase()
         )
       }
-      
-      // If no search terms after filtering by subject, return all subjects
+
+      // If no search terms after filtering by topic, return all topics
+      // Force new array to trigger Vue reactivity
       if (!searchTerms) {
-        this.filteredSubjects = filteredBySubject
+        this.filteredTopics = filteredByTopic.map(topic => ({
+          ...topic,
+          links: [...(topic.links || [])]
+        }))
         return
       }
-      
-      // Then apply search filter
-      const keywords = searchTerms.toLowerCase().split(/\s+/).filter(keyword => keyword.length > 0)
-      
-      if (keywords.length === 0) {
-        this.filteredSubjects = filteredBySubject
-        return
-      }
-      
-      this.filteredSubjects = filteredBySubject
-        .map(subject => {
-          const relevantLinks = subject.links
-            .map(link => {
-              const relevance = this.calculateRelevance(link, keywords)
-              return relevance > 0 ? { ...link, relevance } : null
+
+      // Parse search terms for OR/AND operators
+      const { andGroups, orTerms } = this.parseSearchTerms(searchTerms)
+
+      // When searching, flatten all links and sort by relevance globally
+      const allRelevantLinks = []
+
+      filteredByTopic.forEach(topic => {
+        topic.links.forEach(link => {
+          const relevance = this.calculateRelevance(link, andGroups, orTerms)
+          if (relevance > 0) {
+            allRelevantLinks.push({
+              ...link,
+              relevance,
+              topicName: topic.name,
+              topicId: topic.id
             })
-            .filter(Boolean)
-            .sort((a, b) => b.relevance - a.relevance)
-          
-          return relevantLinks.length > 0
-            ? { ...subject, links: relevantLinks }
-            : null
+          }
         })
-        .filter(Boolean)
+      })
+
+      // Sort all links by relevance (highest first)
+      allRelevantLinks.sort((a, b) => b.relevance - a.relevance)
+
+      // Create a single "Search Results" topic containing all sorted links
+      if (allRelevantLinks.length > 0) {
+        this.filteredTopics = [{
+          id: 'search-results',
+          name: 'Search Results',
+          links: allRelevantLinks
+        }]
+      } else {
+        this.filteredTopics = []
+      }
     },
-    calculateRelevance(link, keywords) {
-      const titleWords = link.title.toLowerCase().split(/\s+/)
-      const urlWords = link.url.toLowerCase().split(/\s+/)
-      
+    parseSearchTerms(searchTerms) {
+      // Split by OR first
+      const orParts = searchTerms.split(/\s+OR\s+|\s+\|\s+/).map(p => p.trim())
+
+      const andGroups = []
+      const orTerms = []
+
+      orParts.forEach(part => {
+        if (part.includes(' AND ') || part.includes(' & ')) {
+          // This is an AND group
+          const terms = part.split(/\s+AND\s+|\s+&\s+/)
+            .map(t => t.trim().toLowerCase())
+            .filter(t => t.length > 0)
+          if (terms.length > 0) {
+            andGroups.push(terms)
+          }
+        } else {
+          // Regular OR terms (space-separated words)
+          const terms = part.split(/\s+/)
+            .map(t => t.trim().toLowerCase())
+            .filter(t => t.length > 0 && t !== 'or' && t !== 'and' && t !== '&' && t !== '|')
+          orTerms.push(...terms)
+        }
+      })
+
+      return { andGroups, orTerms }
+    },
+    calculateRelevance(link, andGroups, orTerms) {
+      const titleLower = link.title.toLowerCase()
+      const urlLower = link.url.toLowerCase()
+      const titleWords = titleLower.split(/\s+/)
+      const urlWords = urlLower.split(/\s+/)
+
       let relevance = 0
-      let matchedKeywords = 0
-      
-      for (const keyword of keywords) {
-        let keywordMatched = false
-        
-        for (const word of titleWords) {
-          if (word === keyword) {
-            relevance += 2
-            keywordMatched = true
-            break
-          } else if (word.includes(keyword)) {
-            relevance += 1
-            keywordMatched = true
+
+      // Check AND groups - ALL terms in at least one group must match
+      let andGroupMatched = andGroups.length === 0 // If no AND groups, consider it matched
+      for (const andGroup of andGroups) {
+        let allTermsInGroupMatched = true
+        let groupRelevance = 0
+
+        for (const term of andGroup) {
+          const termMatch = this.matchTerm(term, titleLower, titleWords, urlLower, urlWords)
+          if (termMatch > 0) {
+            groupRelevance += termMatch
+          } else {
+            allTermsInGroupMatched = false
             break
           }
         }
-        
-        if (!keywordMatched) {
-          for (const word of urlWords) {
-            if (word === keyword) {
-              relevance += 1
-              keywordMatched = true
-              break
-            } else if (word.includes(keyword)) {
-              relevance += 0.5
-              keywordMatched = true
-              break
-            }
-          }
+
+        if (allTermsInGroupMatched) {
+          andGroupMatched = true
+          relevance += groupRelevance * 1.5 // Boost AND matches
+          break // Only need one AND group to match
         }
-        
-        if (keywordMatched) matchedKeywords++
       }
-      
-      // Boost relevance if all keywords matched
-      if (matchedKeywords === keywords.length && keywords.length > 0) {
-        relevance *= 1.5
+
+      // If AND groups exist but none matched, return 0
+      if (andGroups.length > 0 && !andGroupMatched) {
+        return 0
       }
-      
+
+      // Check OR terms - ANY term can match
+      let orMatchCount = 0
+      for (const term of orTerms) {
+        const termMatch = this.matchTerm(term, titleLower, titleWords, urlLower, urlWords)
+        if (termMatch > 0) {
+          relevance += termMatch
+          orMatchCount++
+        }
+      }
+
+      // If we have OR terms but none matched, return 0
+      if (orTerms.length > 0 && orMatchCount === 0 && andGroups.length === 0) {
+        return 0
+      }
+
+      // Boost if multiple OR terms matched
+      if (orMatchCount > 1) {
+        relevance *= (1 + (orMatchCount * 0.2))
+      }
+
       return relevance
     },
+    matchTerm(term, titleLower, titleWords, urlLower, urlWords) {
+      let score = 0
+
+      // Exact match in title
+      if (titleLower === term) {
+        score += 5
+      }
+      // Title contains the exact term
+      else if (titleLower.includes(term)) {
+        score += 3
+      }
+
+      // Check individual title words
+      for (const word of titleWords) {
+        if (word === term) {
+          score += 2
+          break
+        } else if (word.includes(term)) {
+          score += 1
+          break
+        }
+      }
+
+      // Check URL
+      if (urlLower.includes(term)) {
+        score += 1
+      }
+
+      // Check individual URL words
+      for (const word of urlWords) {
+        if (word === term) {
+          score += 0.8
+          break
+        } else if (word.includes(term)) {
+          score += 0.4
+          break
+        }
+      }
+
+      return score
+    },
     onSearchInput: debounce(function() {
-      // Check if we're typing in the subject: part
-      if (this.searchQuery.match(/subject:[^&\s]*$/)) {
+      // Check if we're typing in the topic: part
+      if (this.searchQuery.match(/topic:[^&\s]*$/)) {
         this.showSubjectSuggestions = true
         this.selectedSuggestionIndex = -1 // Reset selection index when input changes
       } else {
         this.showSubjectSuggestions = false
       }
-      
+
       this.applyFilters()
     }, 300),
     handleSearchKeydown(e) {
-      // Handle navigation in subject suggestions
-      if (this.showSubjectSuggestions && this.subjectSuggestions.length > 0) {
+      // Handle navigation in topic suggestions
+      if (this.showSubjectSuggestions && this.topicSuggestions.length > 0) {
         if (e.key === 'ArrowDown') {
           e.preventDefault()
           this.selectedSuggestionIndex = Math.min(
-            this.selectedSuggestionIndex + 1, 
-            this.subjectSuggestions.length - 1
+            this.selectedSuggestionIndex + 1,
+            this.topicSuggestions.length - 1
           )
           if (this.selectedSuggestionIndex === -1) {
             this.selectedSuggestionIndex = 0
@@ -537,13 +820,13 @@ export default {
           this.selectedSuggestionIndex = Math.max(this.selectedSuggestionIndex - 1, 0)
         } else if (e.key === 'Enter' || e.key === 'Tab') {
           e.preventDefault()
-          if (this.subjectSuggestions.length > 0) {
+          if (this.topicSuggestions.length > 0) {
             // If a suggestion is highlighted, select it
             if (this.selectedSuggestionIndex >= 0) {
-              this.selectSubjectSuggestion(this.subjectSuggestions[this.selectedSuggestionIndex])
+              this.selectSubjectSuggestion(this.topicSuggestions[this.selectedSuggestionIndex])
             } else {
               // Otherwise select the first suggestion
-              this.selectSubjectSuggestion(this.subjectSuggestions[0])
+              this.selectSubjectSuggestion(this.topicSuggestions[0])
             }
           }
         } else if (e.key === 'Escape') {
@@ -553,22 +836,22 @@ export default {
         }
       }
     },
-    selectSubjectSuggestion(subject) {
-      // Replace the partial subject with the selected one
-      const beforeSubject = this.searchQuery.split('subject:')[0]
-      let afterSubject = ''
-      
-      // Check if there's content after the subject
-      const afterMatch = this.searchQuery.match(/subject:[^\s]*(.*?)$/)
+    selectSubjectSuggestion(topic) {
+      // Replace the partial topic with the selected one
+      const beforeTopic = this.searchQuery.split('topic:')[0]
+      let afterTopic = ''
+
+      // Check if there's content after the topic
+      const afterMatch = this.searchQuery.match(/topic:[^\s]*(.*?)$/)
       if (afterMatch && afterMatch[1]) {
-        afterSubject = afterMatch[1]
+        afterTopic = afterMatch[1]
       }
-      
-      this.searchQuery = `${beforeSubject}subject:${subject}${afterSubject}`
+
+      this.searchQuery = `${beforeTopic}topic:${topic}${afterTopic}`
       this.showSubjectSuggestions = false
       this.selectedSuggestionIndex = -1 // Reset selection index
       this.applyFilters()
-      
+
       // Keep focus on the search input
       this.$nextTick(() => {
         this.$refs.searchInput.focus()
@@ -579,49 +862,53 @@ export default {
       if (this.$refs.searchInput && this.$refs.searchInput.contains(event.target)) {
         return
       }
-      
+
       this.showSubjectSuggestions = false
       this.selectedSuggestionIndex = -1 // Reset selection index
     },
+    closeSettings(event) {
+      // Don't close if clicking inside the settings dropdown
+      const settingsDropdown = event.target.closest('.settings-dropdown')
+      if (settingsDropdown) {
+        return
+      }
+
+      this.showSettings = false
+    },
     async deleteSelected() {
-      // Get all visible links from filtered subjects
+      // Get all visible links from filtered topics
       const visibleLinks = this.getVisibleLinks()
-      
+
       // Filter to only selected links
       const selectedLinks = visibleLinks.filter(link => link.selected)
-      
+
       if (selectedLinks.length === 0) {
         this.showNotification('No links selected', 'error')
         return
       }
-      
+
       if (!confirm(`Delete ${selectedLinks.length} selected links?`)) {
         return
       }
-      
+
       try {
-        const response = await fetch('/api/delete_links', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            filename: this.currentFile,
-            links: selectedLinks.map(link => ({
-              id: link.id,
-              title: link.title,
-              url: link.url
-            }))
+        // Delete each link using the new API
+        const deletePromises = selectedLinks.map(link =>
+          fetch(`/api/v2/links/${link.id}`, {
+            method: 'DELETE',
+            headers: this.getAuthHeader()
           })
-        })
-        
-        if (response.ok) {
-          this.showNotification(`Deleted ${selectedLinks.length} links`, 'success')
+        )
+
+        const results = await Promise.all(deletePromises)
+        const successCount = results.filter(r => r.ok).length
+
+        if (successCount > 0) {
+          this.showNotification(`Deleted ${successCount} links`, 'success')
           // Reload links after deletion
-          await this.loadLinks()
+          await this.loadAllTopicsAndLinks()
         } else {
           this.showNotification('Failed to delete links', 'error')
-          console.error('Failed to delete links')
         }
       } catch (error) {
         this.showNotification('Error deleting links', 'error')
@@ -630,13 +917,13 @@ export default {
     },
     toggleAllFiltered() {
       const shouldSelect = !this.allFilteredSelected
-      
-      // Directly update the filtered subjects
-      this.filteredSubjects.forEach(subject => {
-        subject.links.forEach(link => {
-          // Find the original link in the subjects array and update it
-          for (const originalSubject of this.subjects) {
-            const originalLink = originalSubject.links.find(l => l.url === link.url)
+
+      // Directly update the filtered topics
+      this.filteredTopics.forEach(topic => {
+        topic.links.forEach(link => {
+          // Find the original link in the topics array and update it
+          for (const originalTopic of this.topics) {
+            const originalLink = originalTopic.links.find(l => l.id === link.id)
             if (originalLink) {
               originalLink.selected = shouldSelect
               // Also update the filtered link to keep UI in sync
@@ -659,7 +946,7 @@ export default {
       }
       
       const text = selectedLinks
-        .map(link => `[${link.title}](${link.url})`)
+        .map(link => `- [${link.title}](${link.url})  `)
         .join('\n')
       
       navigator.clipboard.writeText(text)
@@ -672,37 +959,42 @@ export default {
         })
     },
     onCheckboxChange(changedLink) {
-      // Create a map of URLs for faster lookup
+      // Create a map of IDs for faster lookup
       const visibleLinks = this.getVisibleLinks()
-      const visibleUrlMap = new Set(visibleLinks.map(link => link.url))
-      
+      const visibleIdMap = new Set(visibleLinks.map(link => link.id))
+
       // Only update if the link is visible in the filtered view
-      if (visibleUrlMap.has(changedLink.url)) {
+      if (visibleIdMap.has(changedLink.id)) {
         // Update all instances of this link in both original and filtered data
-        this.subjects.forEach(subject => {
-          subject.links.forEach(link => {
-            if (link.url === changedLink.url) {
+        this.topics.forEach(topic => {
+          topic.links.forEach(link => {
+            if (link.id === changedLink.id) {
               link.selected = changedLink.selected
             }
           })
         })
-        
-        this.filteredSubjects.forEach(subject => {
-          subject.links.forEach(link => {
-            if (link.url === changedLink.url) {
+
+        this.filteredTopics.forEach(topic => {
+          topic.links.forEach(link => {
+            if (link.id === changedLink.id) {
               link.selected = changedLink.selected
             }
           })
         })
       }
     },
-    openBulkAddDialog(subject) {
-      this.currentSubject = subject
+    openBulkAddDialog(topicName) {
+      this.currentTopic = topicName
       this.showBulkDialog = true
     },
     async handleLinksAdded() {
       this.showBulkDialog = false
-      await this.loadLinks()
+      await this.loadAllTopicsAndLinks()
+    },
+    setCompactness(level) {
+      this.compactness = level
+      localStorage.setItem('compactness', level)
+      this.showSettings = false
     },
     openLink(link) {
       window.open(link.url, '_blank')
@@ -723,12 +1015,14 @@ export default {
     handleGlobalKeydown(e) {
       // Skip if we're in an input field
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
-      
+
       // Skip if Command/Ctrl key is pressed to allow browser shortcuts
       if (e.metaKey || e.ctrlKey) return
 
       // Get the currently focused link element once
       const focusedElement = document.activeElement
+      const allLinks = this.getAllLinks()
+      let currentIndex = allLinks.indexOf(focusedElement)
 
       if (e.shiftKey) {
         switch (e.key) {
@@ -757,15 +1051,21 @@ export default {
       switch (e.key) {
         case 'x':
           e.preventDefault()
-          if (focusedElement && focusedElement.classList.contains('link-item')) {
-            // Find the link data that corresponds to this element
-            const url = focusedElement.getAttribute('data-url')
-            
-            // Search through filtered subjects first for better performance
+          // If no link is focused, focus the first one
+          if (currentIndex === -1 && allLinks.length > 0) {
+            allLinks[0].focus()
+            currentIndex = 0
+          }
+
+          if (currentIndex >= 0 && allLinks[currentIndex]) {
+            const linkElement = allLinks[currentIndex]
+            const linkId = linkElement.getAttribute('data-link-id')
+
+            // Search through filtered topics first for better performance
             let found = false
-            for (const subject of this.filteredSubjects) {
-              for (const link of subject.links) {
-                if (link.url === url) {
+            for (const topic of this.filteredTopics) {
+              for (const link of topic.links) {
+                if (link.id === linkId) {
                   link.selected = !link.selected
                   this.onCheckboxChange(link)
                   found = true
@@ -774,12 +1074,12 @@ export default {
               }
               if (found) break
             }
-            
-            // If not found in filtered subjects, search all subjects
+
+            // If not found in filtered topics, search all topics
             if (!found) {
-              for (const subject of this.subjects) {
-                for (const link of subject.links) {
-                  if (link.url === url) {
+              for (const topic of this.topics) {
+                for (const link of topic.links) {
+                  if (link.id === linkId) {
                     link.selected = !link.selected
                     this.onCheckboxChange(link)
                     break
@@ -791,9 +1091,12 @@ export default {
           break
         case 'Enter':
           e.preventDefault()
-          if (focusedElement && focusedElement.classList.contains('link-item')) {
-            const url = focusedElement.getAttribute('data-url')
-            const link = this.getVisibleLinks().find(l => l.url === url)
+          // If no link is focused, focus the first one
+          if (currentIndex === -1 && allLinks.length > 0) {
+            allLinks[0].focus()
+          } else if (currentIndex >= 0 && allLinks[currentIndex]) {
+            const linkId = allLinks[currentIndex].getAttribute('data-link-id')
+            const link = this.getVisibleLinks().find(l => l.id === linkId)
             if (link) {
               this.openLink(link)
             }
@@ -802,12 +1105,22 @@ export default {
         case 'ArrowDown':
         case 'j':
           e.preventDefault()
-          this.focusNextLink(this.getAllLinks().indexOf(document.activeElement))
+          // If no link is focused, focus the first one
+          if (currentIndex === -1 && allLinks.length > 0) {
+            allLinks[0].focus()
+          } else {
+            this.focusNextLink(currentIndex)
+          }
           break
         case 'ArrowUp':
         case 'k':
           e.preventDefault()
-          this.focusPreviousLink(this.getAllLinks().indexOf(document.activeElement))
+          // If no link is focused, focus the first or last one
+          if (currentIndex === -1 && allLinks.length > 0) {
+            allLinks[allLinks.length - 1].focus()
+          } else {
+            this.focusPreviousLink(currentIndex)
+          }
           break
         case 'Delete':
           e.preventDefault()
@@ -867,8 +1180,8 @@ export default {
       allLinks[prevIndex]?.focus()
     },
     getVisibleLinks() {
-      // First get all links from filtered subjects
-      return this.filteredSubjects.flatMap(subject => subject.links || [])
+      // First get all links from filtered topics
+      return this.filteredTopics.flatMap(topic => topic.links || [])
     },
     showNotification(message, type = 'info', duration = 3000) {
       // Clear any existing timeout
@@ -886,18 +1199,18 @@ export default {
         this.notification.show = false
       }, duration)
     },
-    // Toggle collapse state for a subject
-    toggleSubjectCollapse(subject) {
-      if (this.collapsedSubjects.has(subject)) {
-        this.collapsedSubjects.delete(subject)
+    // Toggle collapse state for a topic
+    toggleTopicCollapse(topicId) {
+      if (this.collapsedTopics.has(topicId)) {
+        this.collapsedTopics.delete(topicId)
       } else {
-        this.collapsedSubjects.add(subject)
+        this.collapsedTopics.add(topicId)
       }
     },
-    
-    // Check if a subject is collapsed
-    isSubjectCollapsed(subject) {
-      return this.collapsedSubjects.has(subject)
+
+    // Check if a topic is collapsed
+    isTopicCollapsed(topicId) {
+      return this.collapsedTopics.has(topicId)
     },
     
     // Update getAllLinks to only include links from expanded subjects
@@ -908,14 +1221,6 @@ export default {
           return style.display !== 'none' && style.visibility !== 'hidden'
         })
     },
-  },
-  watch: {
-    currentFile() {
-      this.loadLinks()
-      // Reset filters when changing files
-      this.searchQuery = ''
-      this.currentSubjectFilter = ''
-    }
   }
 }
 
@@ -944,96 +1249,139 @@ body {
   background-color: var(--background-color);
   color: var(--text-color);
   font-size: 14px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .app {
-  padding: 20px;
-  width: 100%;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .app-container {
-  max-width: 1000px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 20px 0 20px;
+}
+
+.app-header {
+  padding: 8px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--card-background);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  max-width: 1400px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
 }
 
-.controls {
-  padding: 5px 0;
-  display: flex;
-  gap: 10px;
-  margin: 10px 0;
-  width: 100%;
-  box-sizing: border-box;
+.app-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--primary-color);
 }
 
-#file-list {
-  flex: 0.3;
-  min-width: 120px;
-  max-width: 30%;
+.action-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.search-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex: 1;
+  max-width: 700px;
+}
+
+#subject-list {
+  flex: 0 0 200px;
+  min-width: 150px;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  background-color: var(--card-background);
+  color: var(--text-color);
+  transition: all 0.2s;
+  cursor: pointer;
 }
 
 .search-container {
   position: relative;
-  flex: 0.7;
-  width: 70%;
+  flex: 1;
   box-sizing: border-box;
-}
-
-#file-list {
-  padding: 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 3px;
-  font-size: 14px;
-  background-color: var(--card-background);
-  color: var(--text-color);
-  transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 #search-input {
   width: 100%;
-  padding: 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 3px;
-  font-size: 14px;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
   background-color: var(--card-background);
   color: var(--text-color);
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition: all 0.2s;
   box-sizing: border-box;
 }
 
-#file-list:focus, #search-input:focus {
+#subject-list:hover,
+#search-input:hover {
+  border-color: #9ca3af;
+}
+
+#subject-list:focus,
+#search-input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
-}
-
-#preview-wrapper {
-  background-color: var(--card-background);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 15px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  display: flex;
-  gap: 20px;
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 400px; /* Set minimum height */
-}
-
-.main-content {
-  flex: 1;
-  min-width: 0;
-  overflow-x: hidden;
-  width: 100%;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
 .multi-select-controls {
+  padding: 12px 20px;
+  background-color: var(--card-background);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.links-container {
+  flex: 1;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 20px 20px 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: var(--card-background);
+}
+
+.count-info {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  gap: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .control-buttons {
@@ -1067,6 +1415,81 @@ body {
 
 .control-buttons button:hover {
   background-color: #f0f0f0;
+}
+
+.settings-dropdown {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+#settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  color: #666;
+  margin: 0;
+}
+
+#settings-btn:hover {
+  background-color: #f0f0f0;
+  color: var(--primary-color);
+}
+
+.settings-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 5px;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 140px;
+  padding: 8px 0;
+}
+
+.settings-header {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+
+.settings-option {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-color);
+  transition: background-color 0.2s;
+}
+
+.settings-option:hover {
+  background-color: rgba(52, 152, 219, 0.1);
+}
+
+.settings-option.active {
+  background-color: rgba(52, 152, 219, 0.15);
+  color: var(--primary-color);
+  font-weight: 500;
 }
 
 #delete-selected-btn:hover {
@@ -1125,34 +1548,43 @@ body {
 }
 
 .links-list {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .link-item {
   display: flex;
   align-items: center;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border-color);
+  padding: 2px 8px;
   border-left: 3px solid transparent;
   overflow: hidden;
   width: 100%;
   outline: none;
-  transition: all 0.2s ease;
-}
-
-.link-item:last-child {
-  border-bottom: none;
+  transition: all 0.15s ease;
+  border-radius: 4px;
+  margin-bottom: 1px;
 }
 
 .link-item p {
   margin: 0;
   flex-grow: 1;
-  font-size: 1em;
-  line-height: 1.4;
-  padding-left: 5px;
+  font-size: 13px;
+  line-height: 1.2;
+  padding-left: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.topic-badge {
+  background-color: #e3f2fd;
+  color: #1976d2;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .link-item a {
@@ -1167,7 +1599,14 @@ body {
 .checkbox-wrapper {
   display: flex;
   align-items: center;
-  width: 25px;
+  width: 18px;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
 }
 
 #delete-selected-btn, #copy-filtered-btn, #bulk-add-btn {
@@ -1443,17 +1882,139 @@ body {
 
 /* Add styles for collapsible subjects */
 .subject-group {
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 5px;
+  margin-bottom: 12px;
+  padding-bottom: 0;
 }
 
 .subject-group:last-child {
-  border-bottom: none;
+  margin-bottom: 0;
 }
 
 .subject-group.collapsed {
+  margin-bottom: 6px;
+}
+
+/* Logout button */
+.logout-btn {
+  padding: 9px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  background-color: var(--card-background);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.logout-btn:hover {
+  background-color: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.logout-btn:active {
+  transform: scale(0.98);
+}
+
+/* Compactness styles */
+
+/* Small compactness - tight spacing */
+.compact-small .checkbox-wrapper {
+  width: 18px;
+}
+
+.compact-small .checkbox-wrapper input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
+.compact-small .link-item {
+  padding: 2px 8px;
+  margin-bottom: 1px;
+}
+
+.compact-small .link-item p {
+  font-size: 13px;
+  line-height: 1.2;
+  padding-left: 6px;
+}
+
+.compact-small .links-list {
+  margin-bottom: 6px;
+}
+
+.compact-small .subject-group {
+  margin-bottom: 12px;
+}
+
+.compact-small .subject-group.collapsed {
+  margin-bottom: 6px;
+}
+
+/* Medium compactness - default spacing */
+.compact-medium .checkbox-wrapper {
+  width: 25px;
+}
+
+.compact-medium .checkbox-wrapper input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.compact-medium .link-item {
+  padding: 4px 8px;
+  margin-bottom: 2px;
+}
+
+.compact-medium .link-item p {
+  font-size: 13px;
+  line-height: 1.3;
+  padding-left: 8px;
+}
+
+.compact-medium .links-list {
+  margin-bottom: 10px;
+}
+
+.compact-medium .subject-group {
+  margin-bottom: 16px;
+}
+
+.compact-medium .subject-group.collapsed {
+  margin-bottom: 8px;
+}
+
+/* Large compactness - spacious */
+.compact-large .checkbox-wrapper {
+  width: 30px;
+}
+
+.compact-large .checkbox-wrapper input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.compact-large .link-item {
+  padding: 6px 10px;
   margin-bottom: 3px;
-  padding-bottom: 3px;
+}
+
+.compact-large .link-item p {
+  font-size: 14px;
+  line-height: 1.4;
+  padding-left: 10px;
+}
+
+.compact-large .links-list {
+  margin-bottom: 14px;
+}
+
+.compact-large .subject-group {
+  margin-bottom: 20px;
+}
+
+.compact-large .subject-group.collapsed {
+  margin-bottom: 10px;
 }
 </style>

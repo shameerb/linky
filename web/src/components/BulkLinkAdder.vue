@@ -3,20 +3,37 @@
     <div class="dialog-content">
       <button class="close-btn" @click="$emit('close')">×</button>
       <h3>Add Bulk Links</h3>
-      
+
       <div class="subject-select">
-        <label>Select Subject (optional)</label>
-        <select v-model="selectedSubject" class="subject-dropdown">
-          <option value="">New Section (Today's Date)</option>
-          <option v-for="subject in availableSubjects" :key="subject" :value="subject">
-            {{ subject }}
-          </option>
-        </select>
+        <label>Topic</label>
+        <div class="autocomplete-wrapper">
+          <input
+            v-model="topicName"
+            type="text"
+            class="subject-input"
+            placeholder="Enter or select topic name"
+            @input="onTopicInput"
+            @keydown="handleTopicKeydown"
+            ref="topicInput"
+          />
+          <div v-if="showSuggestions && filteredTopics.length > 0" class="suggestions-dropdown">
+            <div
+              v-for="(topic, index) in filteredTopics"
+              :key="topic"
+              class="suggestion-item"
+              :class="{ 'selected': index === selectedIndex }"
+              @click="selectTopic(topic)"
+              @mouseover="selectedIndex = index"
+            >
+              {{ topic }}
+            </div>
+          </div>
+        </div>
       </div>
 
       <p class="help-text">Enter links in markdown format:</p>
       <pre class="format-example">- [link title](link url)
-- [another title](another url)</pre>
+- [another title](another url)  </pre>
       <textarea
         v-model="linksText"
         placeholder="Paste your markdown links here..."
@@ -24,7 +41,7 @@
       ></textarea>
       <div class="dialog-actions">
         <button @click="$emit('close')" class="cancel-btn">Cancel</button>
-        <button @click="addLinks" class="add-btn" :disabled="!linksText.trim()">
+        <button @click="addLinks" class="add-btn" :disabled="!canAddLinks">
           Add Links
         </button>
       </div>
@@ -36,11 +53,15 @@
 export default {
   name: 'BulkLinkAdder',
   props: {
-    currentFile: {
+    currentSubjectId: {
       type: String,
-      required: true
+      default: ''
     },
-    availableSubjects: {
+    currentSubjectName: {
+      type: String,
+      default: ''
+    },
+    availableTopics: {
       type: Array,
       default: () => []
     }
@@ -48,10 +69,82 @@ export default {
   data() {
     return {
       linksText: '',
-      selectedSubject: ''
+      topicName: '',
+      showSuggestions: false,
+      selectedIndex: -1
     }
   },
+  computed: {
+    canAddLinks() {
+      return this.linksText.trim() && this.topicName.trim() && this.currentSubjectId
+    },
+    filteredTopics() {
+      if (!this.topicName) return this.availableTopics
+      const query = this.topicName.toLowerCase()
+      return this.availableTopics.filter(topic =>
+        topic.toLowerCase().includes(query)
+      )
+    }
+  },
+  mounted() {
+    document.addEventListener('keydown', this.handleEscape)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this.handleEscape)
+  },
   methods: {
+    handleEscape(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        this.$emit('close')
+      }
+    },
+    onTopicInput() {
+      this.showSuggestions = true
+      this.selectedIndex = -1
+    },
+    handleTopicKeydown(e) {
+      if (!this.showSuggestions || this.filteredTopics.length === 0) return
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        this.selectedIndex = Math.min(
+          this.selectedIndex + 1,
+          this.filteredTopics.length - 1
+        )
+        if (this.selectedIndex === -1) {
+          this.selectedIndex = 0
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
+      } else if (e.key === 'Enter' && this.selectedIndex >= 0) {
+        e.preventDefault()
+        this.selectTopic(this.filteredTopics[this.selectedIndex])
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        this.showSuggestions = false
+        this.selectedIndex = -1
+      } else if (e.key === 'Tab' && this.filteredTopics.length > 0) {
+        e.preventDefault()
+        const topicToSelect = this.selectedIndex >= 0
+          ? this.filteredTopics[this.selectedIndex]
+          : this.filteredTopics[0]
+        this.selectTopic(topicToSelect)
+      }
+    },
+    selectTopic(topic) {
+      this.topicName = topic
+      this.showSuggestions = false
+      this.selectedIndex = -1
+    },
+    getAuthHeader() {
+      const token = localStorage.getItem('token')
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    },
     parseLinks(text) {
       const links = []
       const lines = text.split('\n')
@@ -72,7 +165,7 @@ export default {
     },
 
     async addLinks() {
-      if (!this.linksText.trim()) return
+      if (!this.canAddLinks) return
 
       const links = this.parseLinks(this.linksText)
       if (links.length === 0) {
@@ -81,37 +174,68 @@ export default {
       }
 
       try {
-        const response = await fetch('/api/bulk_links', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            filename: this.currentFile,
-            subject: this.selectedSubject || new Date().toLocaleDateString(),
-            links: links
-          })
+        // Use current subject ID from props
+        const subjectId = this.currentSubjectId
+
+        // Find or create topic using the name-based API
+        const subjectName = this.currentSubjectName
+        const topicsResponse = await fetch(`/api/v2/subjects/${encodeURIComponent(subjectName)}/topics`, {
+          headers: this.getAuthHeader()
         })
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          console.error('Error response:', errorText)
+        if (!topicsResponse.ok) {
+          throw new Error('Failed to fetch topics')
+        }
+
+        const topics = await topicsResponse.json()
+        const existingTopic = topics.find(t => t.name.toLowerCase() === this.topicName.toLowerCase())
+
+        let topicId = null
+        if (existingTopic) {
+          // Use existing topic
+          topicId = existingTopic.id
+        } else {
+          // Create new topic
+          const createTopicResponse = await fetch(`/api/v2/subjects/${subjectId}/topics`, {
+            method: 'POST',
+            headers: this.getAuthHeader(),
+            body: JSON.stringify({ name: this.topicName })
+          })
+
+          if (!createTopicResponse.ok) {
+            throw new Error('Failed to create topic')
+          }
+
+          const newTopic = await createTopicResponse.json()
+          topicId = newTopic.id
+        }
+
+        // Add links to topic (will append to existing topic)
+        const addLinksResponse = await fetch(`/api/v2/topics/${topicId}/links/bulk`, {
+          method: 'POST',
+          headers: this.getAuthHeader(),
+          body: JSON.stringify({ links })
+        })
+
+        if (!addLinksResponse.ok) {
+          const errorText = await addLinksResponse.text()
           throw new Error(`Failed to add links: ${errorText}`)
         }
 
         this.$emit('links-added')
         this.$emit('close')
         this.linksText = ''
+        this.topicName = ''
       } catch (error) {
         console.error('Error adding links:', error)
-        alert('Failed to add links. Please try again.')
+        alert(`Failed to add links: ${error.message}`)
       }
     }
   }
 }
 </script>
 
-<style>
+<style scoped>
 .bulk-link-dialog {
   position: fixed;
   top: 0;
@@ -176,6 +300,7 @@ export default {
   margin: 0 0 15px;
   font-size: 0.9em;
   color: #666;
+  white-space: pre;
 }
 
 textarea {
@@ -245,18 +370,48 @@ textarea:focus {
   font-size: 0.9em;
 }
 
-.subject-dropdown {
+.autocomplete-wrapper {
+  position: relative;
+}
+
+.subject-input {
   width: 100%;
   padding: 8px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 14px;
-  margin-bottom: 15px;
+  box-sizing: border-box;
 }
 
-.subject-dropdown:focus {
+.subject-input:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.suggestion-item:hover,
+.suggestion-item.selected {
+  background-color: rgba(52, 152, 219, 0.1);
 }
 </style>

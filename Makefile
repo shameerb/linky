@@ -15,11 +15,12 @@ MARKDOWN_DIR=./Links
 build: build-frontend build-backend
 
 build-frontend:
+	@echo "Cleaning old frontend builds..."
+	rm -rf internal/static/dist/*
+	rm -rf $(WEB_DIR)/dist/*
 	@echo "Building frontend..."
 	cd $(WEB_DIR) && npm install && npm run build
-	@echo "Copying frontend dist to static..."
-	mkdir -p internal/static/dist
-	cp -r $(WEB_DIR)/dist/* internal/static/dist/
+	@echo "Frontend built successfully to internal/static/dist"
 
 build-backend:
 	@echo "Building backend..."
