@@ -50,6 +50,8 @@
 </template>
 
 <script>
+import { supabase } from '@/lib/supabase'
+
 export default {
   name: 'BulkLinkAdder',
   props: {
@@ -138,13 +140,6 @@ export default {
       this.showSuggestions = false
       this.selectedIndex = -1
     },
-    getAuthHeader() {
-      const token = localStorage.getItem('token')
-      return {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    },
     parseLinks(text) {
       const links = []
       const lines = text.split('\n')
@@ -174,53 +169,50 @@ export default {
       }
 
       try {
-        // Use current subject ID from props
         const subjectId = this.currentSubjectId
 
-        // Find or create topic using the name-based API
-        const subjectName = this.currentSubjectName
-        const topicsResponse = await fetch(`/api/v2/subjects/${encodeURIComponent(subjectName)}/topics`, {
-          headers: this.getAuthHeader()
-        })
+        // Check if topic exists
+        const { data: topics, error: topicsError } = await supabase
+          .from('topics')
+          .select('*')
+          .eq('subject_id', subjectId)
+          .ilike('name', this.topicName)
+          .limit(1)
 
-        if (!topicsResponse.ok) {
-          throw new Error('Failed to fetch topics')
-        }
-
-        const topics = await topicsResponse.json()
-        const existingTopic = topics.find(t => t.name.toLowerCase() === this.topicName.toLowerCase())
+        if (topicsError) throw topicsError
 
         let topicId = null
-        if (existingTopic) {
+
+        if (topics && topics.length > 0) {
           // Use existing topic
-          topicId = existingTopic.id
+          topicId = topics[0].id
         } else {
           // Create new topic
-          const createTopicResponse = await fetch(`/api/v2/subjects/${subjectId}/topics`, {
-            method: 'POST',
-            headers: this.getAuthHeader(),
-            body: JSON.stringify({ name: this.topicName })
-          })
+          const { data: newTopic, error: createError } = await supabase
+            .from('topics')
+            .insert({
+              subject_id: subjectId,
+              name: this.topicName
+            })
+            .select()
+            .single()
 
-          if (!createTopicResponse.ok) {
-            throw new Error('Failed to create topic')
-          }
-
-          const newTopic = await createTopicResponse.json()
+          if (createError) throw createError
           topicId = newTopic.id
         }
 
-        // Add links to topic (will append to existing topic)
-        const addLinksResponse = await fetch(`/api/v2/topics/${topicId}/links/bulk`, {
-          method: 'POST',
-          headers: this.getAuthHeader(),
-          body: JSON.stringify({ links })
-        })
+        // Bulk insert links
+        const linksToInsert = links.map(link => ({
+          topic_id: topicId,
+          title: link.title,
+          url: link.url
+        }))
 
-        if (!addLinksResponse.ok) {
-          const errorText = await addLinksResponse.text()
-          throw new Error(`Failed to add links: ${errorText}`)
-        }
+        const { error: linksError } = await supabase
+          .from('links')
+          .insert(linksToInsert)
+
+        if (linksError) throw linksError
 
         this.$emit('links-added')
         this.$emit('close')

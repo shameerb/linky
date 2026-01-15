@@ -7,14 +7,14 @@
     <!-- Show main app if authenticated -->
     <div v-else class="app-container">
       <!-- Header with Linky title and logout -->
-      <div class="app-header">
+      <div class="app-header" :class="{ 'header-hidden': isHeaderHidden }">
         <h1 class="app-title">Linky</h1>
         <button class="logout-btn" @click="logout" title="Logout">
           Logout
         </button>
       </div>
 
-      <div class="multi-select-controls">
+      <div class="multi-select-controls" :class="{ 'controls-hidden': isHeaderHidden }">
         <div class="action-controls">
           <div class="control-buttons">
             <input
@@ -201,6 +201,7 @@
 </template>
 
 <script>
+import { supabase } from '@/lib/supabase'
 import BulkLinkAdder from './components/BulkLinkAdder.vue'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import KeyboardShortcuts from './components/KeyboardShortcuts.vue'
@@ -249,6 +250,9 @@ export default {
       collapsedTopics: new Set(), // Track which topics are collapsed
       compactness: 'medium', // small, medium, large
       showSettings: false,
+      isHeaderHidden: false,
+      lastScrollTop: 0,
+      scrollThreshold: 5, // Minimum scroll distance to trigger hide/show
     }
   },
   computed: {
@@ -321,11 +325,23 @@ export default {
     }
   },
   async mounted() {
-    // Check if auth is disabled on the server
-    await this.checkAuthStatus()
-
     // Check if user is already logged in
-    this.checkAuth()
+    await this.checkAuth()
+
+    // Listen for auth state changes
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        this.isAuthenticated = true
+        this.user = session.user
+        this.loadSubjects()
+      } else if (event === 'SIGNED_OUT') {
+        this.isAuthenticated = false
+        this.user = null
+        this.subjects = []
+        this.topics = []
+        this.filteredTopics = []
+      }
+    })
 
     if (this.isAuthenticated) {
       this.loadSubjects()
@@ -376,6 +392,12 @@ export default {
     // Close settings menu when clicking outside
     document.addEventListener('click', this.closeSettings)
 
+    // Add scroll listener for auto-hiding header on mobile
+    const linksContainer = document.querySelector('.links-container')
+    if (linksContainer) {
+      linksContainer.addEventListener('scroll', this.handleScroll)
+    }
+
     // Focus first link after loading
     this.$nextTick(() => {
       this.focusFirstLink()
@@ -386,43 +408,53 @@ export default {
     document.removeEventListener('keydown', this.handleGlobalKeydown)
     document.removeEventListener('click', this.closeSubjectSuggestions)
     document.removeEventListener('click', this.closeSettings)
+
+    // Clean up scroll listener
+    const linksContainer = document.querySelector('.links-container')
+    if (linksContainer) {
+      linksContainer.removeEventListener('scroll', this.handleScroll)
+    }
   },
   methods: {
-    checkAuth() {
-      const token = localStorage.getItem('token')
-      const userStr = localStorage.getItem('user')
+    handleScroll(e) {
+      const scrollTop = e.target.scrollTop
 
-      if (token && userStr) {
+      // Only hide/show header on mobile (check window width)
+      if (window.innerWidth > 768) {
+        this.isHeaderHidden = false
+        return
+      }
+
+      // Don't do anything if scroll is very small
+      if (Math.abs(scrollTop - this.lastScrollTop) < this.scrollThreshold) {
+        return
+      }
+
+      // Scrolling down - hide header
+      if (scrollTop > this.lastScrollTop && scrollTop > 50) {
+        this.isHeaderHidden = true
+      }
+      // Scrolling up - show header
+      else if (scrollTop < this.lastScrollTop) {
+        this.isHeaderHidden = false
+      }
+
+      this.lastScrollTop = scrollTop
+    },
+    async checkAuth() {
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (session) {
         this.isAuthenticated = true
-        this.user = JSON.parse(userStr)
+        this.user = session.user
+        localStorage.setItem('token', session.access_token)
+        localStorage.setItem('user', JSON.stringify({
+          id: session.user.id,
+          email: session.user.email
+        }))
       } else {
         this.isAuthenticated = false
         this.user = null
-      }
-    },
-    async checkAuthStatus() {
-      try {
-        const response = await fetch('/api/auth/status')
-        if (!response.ok) return
-
-        const data = await response.json()
-
-        // If auth is disabled, auto-login with default user
-        if (!data.authEnabled) {
-          const dummyToken = 'dev-mode-token'
-          const defaultUser = {
-            id: 1,
-            email: data.defaultUser.email
-          }
-
-          localStorage.setItem('token', dummyToken)
-          localStorage.setItem('user', JSON.stringify(defaultUser))
-
-          this.isAuthenticated = true
-          this.user = defaultUser
-        }
-      } catch (error) {
-        console.error('Failed to check auth status:', error)
       }
     },
     handleLogin(data) {
@@ -431,7 +463,8 @@ export default {
       this.loadSubjects()
       this.showNotification('Welcome back!', 'success')
     },
-    logout() {
+    async logout() {
+      await supabase.auth.signOut()
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       this.isAuthenticated = false
@@ -441,28 +474,16 @@ export default {
       this.filteredTopics = []
       this.showNotification('Logged out successfully', 'info')
     },
-    getAuthHeader() {
-      const token = localStorage.getItem('token')
-      return {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    },
     async loadSubjects() {
       try {
-        const response = await fetch('/api/v2/subjects', {
-          headers: this.getAuthHeader()
-        })
+        const { data, error } = await supabase
+          .from('subjects')
+          .select('*')
+          .order('name')
 
-        if (!response.ok) {
-          if (response.status === 401) {
-            this.logout()
-            return
-          }
-          throw new Error('Failed to load subjects')
-        }
+        if (error) throw error
 
-        this.subjects = await response.json() || []
+        this.subjects = data || []
 
         // Restore state from URL parameters (subject and search)
         this.loadFromUrl()
@@ -472,6 +493,11 @@ export default {
       } catch (error) {
         console.error('Error loading subjects:', error)
         this.showNotification('Error loading data', 'error')
+
+        // If JWT error, logout
+        if (error.message?.includes('JWT')) {
+          this.logout()
+        }
       }
     },
     async loadSubjectData() {
@@ -497,39 +523,36 @@ export default {
 
         // Load topics for each subject
         for (const subject of subjectsToLoad) {
-          // Use subject NAME instead of ID
-          const topicsResponse = await fetch(`/api/v2/subjects/${encodeURIComponent(subject.name)}/topics`, {
-            headers: this.getAuthHeader()
-          })
+          const { data: topics, error: topicsError } = await supabase
+            .from('topics')
+            .select('*')
+            .eq('subject_id', subject.id)
+            .order('name')
 
-          if (!topicsResponse.ok) {
-            console.error('Failed to load topics for subject:', subject.name, 'Status:', topicsResponse.status)
+          if (topicsError) {
+            console.error('Failed to load topics for subject:', subject.name, topicsError)
             continue
           }
 
-          const topics = await topicsResponse.json() || []
-
           // Load links for each topic
-          for (const topic of topics) {
-            // Use subject NAME and topic NAME instead of topic ID
-            const linksResponse = await fetch(`/api/v2/subjects/${encodeURIComponent(subject.name)}/topics/${encodeURIComponent(topic.name)}/links`, {
-              headers: this.getAuthHeader()
-            })
+          for (const topic of topics || []) {
+            const { data: links, error: linksError } = await supabase
+              .from('links')
+              .select('*')
+              .eq('topic_id', topic.id)
+              .order('created_at', { ascending: false })
 
-            if (!linksResponse.ok) {
-              console.error('Failed to load links for topic:', topic.name, 'Status:', linksResponse.status)
+            if (linksError) {
+              console.error('Failed to load links for topic:', topic.name, linksError)
               continue
             }
 
-            const links = await linksResponse.json() || []
-
             // Initialize selected property for each link
-            links.forEach(link => {
+            (links || []).forEach(link => {
               link.selected = false
-              link.id = link.id.toString() // Ensure ID is string for consistency
             })
 
-            topic.links = links
+            topic.links = links || []
             this.topics.push(topic)
           }
         }
@@ -892,26 +915,27 @@ export default {
       }
 
       try {
-        // Delete each link using the new API
-        const deletePromises = selectedLinks.map(link =>
-          fetch(`/api/v2/links/${link.id}`, {
-            method: 'DELETE',
-            headers: this.getAuthHeader()
-          })
-        )
+        const linkIds = selectedLinks.map(link => link.id)
 
-        const results = await Promise.all(deletePromises)
-        const successCount = results.filter(r => r.ok).length
+        console.log('Attempting to delete links:', linkIds)
 
-        if (successCount > 0) {
-          this.showNotification(`Deleted ${successCount} links`, 'success')
-          // Reload links after deletion
-          await this.loadAllTopicsAndLinks()
-        } else {
-          this.showNotification('Failed to delete links', 'error')
+        const { data, error } = await supabase
+          .from('links')
+          .delete()
+          .in('id', linkIds)
+          .select()
+
+        if (error) {
+          console.error('Delete error details:', error)
+          throw error
         }
+
+        console.log('Delete successful, deleted:', data)
+        this.showNotification(`Deleted ${selectedLinks.length} links`, 'success')
+        // Reload links after deletion
+        await this.loadAllTopicsAndLinks()
       } catch (error) {
-        this.showNotification('Error deleting links', 'error')
+        this.showNotification(`Error deleting links: ${error.message}`, 'error')
         console.error('Error deleting links:', error)
       }
     },
@@ -1286,6 +1310,10 @@ body {
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .app-title {
@@ -1361,6 +1389,10 @@ body {
   max-width: 1400px;
   margin: 0 auto;
   box-sizing: border-box;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  position: sticky;
+  top: 0;
+  z-index: 99;
 }
 
 .links-container {
@@ -2016,5 +2048,254 @@ body {
 
 .compact-large .subject-group.collapsed {
   margin-bottom: 10px;
+}
+
+/* Header hide/show animation */
+.app-header.header-hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.multi-select-controls.controls-hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  body {
+    font-size: 16px; /* Prevent iOS zoom on input focus */
+  }
+
+  /* Adjust sticky positioning for mobile */
+  .app-header {
+    top: 0;
+  }
+
+  .multi-select-controls {
+    top: 0;
+  }
+
+  /* When header is hidden, adjust controls position */
+  .app-header.header-hidden + .multi-select-controls:not(.controls-hidden) {
+    top: 0;
+  }
+
+  .app-container {
+    padding: 0 10px 0 10px;
+  }
+
+  .app-header {
+    padding: 10px;
+    flex-direction: row;
+    gap: 10px;
+  }
+
+  .app-title {
+    font-size: 16px;
+  }
+
+  .logout-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .multi-select-controls {
+    padding: 10px;
+  }
+
+  .action-controls {
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .control-buttons {
+    width: 100%;
+    justify-content: space-between;
+    order: 3; /* Move to bottom */
+  }
+
+  .search-controls {
+    flex-direction: column;
+    max-width: 100%;
+    width: 100%;
+    order: 2;
+    gap: 8px;
+  }
+
+  #subject-list {
+    flex: none;
+    width: 100%;
+    padding: 12px;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  .search-container {
+    width: 100%;
+  }
+
+  #search-input {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  .count-info {
+    width: 100%;
+    justify-content: space-between;
+    order: 1; /* Move to top */
+    margin-left: 0;
+    font-size: 14px;
+  }
+
+  .control-buttons {
+    flex-wrap: nowrap;
+    overflow-x: visible;
+  }
+
+  .control-buttons button {
+    height: 36px;
+    width: 36px;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .control-buttons button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    display: inline-flex !important;
+  }
+
+  .control-buttons input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+  }
+
+  .links-container {
+    padding: 0 10px 20px 10px;
+  }
+
+  .link-item {
+    padding: 8px;
+    margin-bottom: 2px;
+  }
+
+  .link-item p {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .checkbox-wrapper input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+  }
+
+  .subject-header {
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+
+  .subject {
+    font-size: 1.1em;
+  }
+
+  .help-button {
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+    bottom: 15px;
+    right: 15px;
+  }
+
+  .notification {
+    bottom: 75px;
+    right: 15px;
+    left: 15px;
+    max-width: none;
+  }
+
+  .settings-dropdown {
+    position: relative;
+  }
+
+  #settings-btn {
+    height: 36px;
+    width: 36px;
+    font-size: 16px;
+  }
+
+  .settings-menu {
+    right: -10px;
+  }
+
+  /* Make topic badges smaller on mobile */
+  .topic-badge {
+    font-size: 9px;
+    padding: 2px 4px;
+  }
+
+  /* Adjust subject suggestions for mobile */
+  .subject-suggestions {
+    max-height: 150px;
+  }
+
+  .subject-suggestion {
+    padding: 12px;
+    font-size: 16px;
+  }
+
+  /* Compact mode overrides for mobile */
+  .compact-small .link-item,
+  .compact-medium .link-item,
+  .compact-large .link-item {
+    padding: 8px;
+    margin-bottom: 2px;
+  }
+
+  .compact-small .link-item p,
+  .compact-medium .link-item p,
+  .compact-large .link-item p {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  .compact-small .checkbox-wrapper,
+  .compact-medium .checkbox-wrapper,
+  .compact-large .checkbox-wrapper {
+    width: 28px;
+  }
+
+  .compact-small .checkbox-wrapper input[type="checkbox"],
+  .compact-medium .checkbox-wrapper input[type="checkbox"],
+  .compact-large .checkbox-wrapper input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* Extra small devices (phones in portrait, less than 576px) */
+@media (max-width: 576px) {
+  .app-title {
+    font-size: 14px;
+  }
+
+  .logout-btn {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .link-item p {
+    font-size: 13px;
+  }
+
+  .count-info {
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+
+  .selected-count {
+    margin-right: 8px;
+  }
 }
 </style>

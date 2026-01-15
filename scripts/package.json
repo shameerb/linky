@@ -1,0 +1,12 @@
+{
+  "name": "linky-migration-scripts",
+  "version": "1.0.0",
+  "description": "Data migration scripts for Linky",
+  "scripts": {
+    "export": "go run export-sqlite-to-json.go",
+    "import": "node import-to-supabase.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  }
+}

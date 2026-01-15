@@ -40,10 +40,9 @@ export default defineConfig(({ command, mode }) => {
       }
     }
   } else {
-    // Production build settings
-    config.build.outDir = '../internal/static/dist'
+    // Production build settings (for Vercel)
+    config.build.outDir = 'dist'
     config.build.emptyOutDir = true
-    config.build.manifest = true
   }
 
   return config

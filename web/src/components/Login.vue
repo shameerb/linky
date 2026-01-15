@@ -53,6 +53,8 @@
 </template>
 
 <script>
+import { supabase } from '@/lib/supabase'
+
 export default {
   name: 'Login',
   data() {
@@ -70,33 +72,53 @@ export default {
       this.loading = true
 
       try {
-        const endpoint = this.isSignup ? '/api/auth/signup' : '/api/auth/login'
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
+        let data, error
+
+        if (this.isSignup) {
+          // Sign up with Supabase Auth
+          const result = await supabase.auth.signUp({
             email: this.email,
             password: this.password
           })
-        })
+          data = result.data
+          error = result.error
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(errorText || 'Authentication failed')
+          if (error) throw error
+
+          // Check if email confirmation is required
+          if (data.user && !data.session) {
+            this.error = 'Please check your email to confirm your account'
+            this.loading = false
+            return
+          }
+        } else {
+          // Sign in with Supabase Auth
+          const result = await supabase.auth.signInWithPassword({
+            email: this.email,
+            password: this.password
+          })
+          data = result.data
+          error = result.error
+
+          if (error) throw error
         }
 
-        const data = await response.json()
+        if (data.session && data.user) {
+          // Store session token and user info
+          localStorage.setItem('token', data.session.access_token)
+          localStorage.setItem('user', JSON.stringify({
+            id: data.user.id,
+            email: data.user.email
+          }))
 
-        // Store token and user info
-        localStorage.setItem('token', data.token)
-        localStorage.setItem('user', JSON.stringify(data.user))
-
-        // Emit login event to parent
-        this.$emit('login', data)
+          // Emit login event to parent
+          this.$emit('login', {
+            user: data.user,
+            session: data.session
+          })
+        }
       } catch (err) {
-        this.error = err.message
+        this.error = err.message || 'Authentication failed'
       } finally {
         this.loading = false
       }
