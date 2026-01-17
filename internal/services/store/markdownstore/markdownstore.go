@@ -127,13 +127,19 @@ func (ms *MarkdownStore) DeleteSubject(id int, userID int) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
-	subject, err := ms.GetSubject(id, userID)
+	// Find subject by ID without calling methods that acquire locks
+	files, err := filepath.Glob(filepath.Join(ms.dataDir, "*.md"))
 	if err != nil {
 		return err
 	}
 
-	filename := filepath.Join(ms.dataDir, subject.Name+".md")
-	return os.Remove(filename)
+	for i, filePath := range files {
+		if i+1 == id {
+			return os.Remove(filePath)
+		}
+	}
+
+	return fmt.Errorf("subject not found")
 }
 
 // Topic management (topics = ### headings in markdown files)
@@ -324,8 +330,46 @@ func (ms *MarkdownStore) GetLink(id int, userID int) (*models.Link, error) {
 }
 
 func (ms *MarkdownStore) DeleteLink(id int, userID int) error {
-	// Would need to parse file, find link by ID, remove it, rewrite file
-	return fmt.Errorf("deleting links not yet implemented for markdown store")
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
+	// Decode link ID: topicID * 10000 + (linkIndex + 1)
+	topicID := id / 10000
+	linkIndex := (id % 10000) - 1
+
+	if linkIndex < 0 {
+		return fmt.Errorf("invalid link ID")
+	}
+
+	// Find subject and topic without calling methods that acquire locks
+	// (to avoid deadlock since we already hold the write lock)
+	files, err := filepath.Glob(filepath.Join(ms.dataDir, "*.md"))
+	if err != nil {
+		return err
+	}
+
+	for subjectIndex, filePath := range files {
+		subjectID := subjectIndex + 1
+		filename := filepath.Base(filePath)
+		subjectName := strings.TrimSuffix(filename, ".md")
+
+		// Parse topics from this file
+		orderedTopics, err := ms.parseTopicsOrdered(filePath)
+		if err != nil {
+			continue
+		}
+
+		for topicIndex, topic := range orderedTopics {
+			// Calculate topic ID the same way ListTopics does
+			calculatedTopicID := subjectID*1000 + (topicIndex + 1)
+			if calculatedTopicID == topicID {
+				// Found the topic, now remove the link from the file
+				return ms.removeLinkFromTopic(filepath.Join(ms.dataDir, subjectName+".md"), topic.Name, linkIndex)
+			}
+		}
+	}
+
+	return fmt.Errorf("link not found")
 }
 
 // Tag management (not supported in markdown files)
@@ -423,6 +467,62 @@ func (ms *MarkdownStore) parseTopics(filename string) (map[string][]linkData, er
 	}
 
 	return topics, nil
+}
+
+func (ms *MarkdownStore) removeLinkFromTopic(filename, topicName string, linkIndex int) error {
+	// Read entire file
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(content), "\n")
+	newLines := make([]string, 0, len(lines))
+	linkRegex := regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
+
+	inTopic := false
+	currentLinkIndex := 0
+	removed := false
+
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Check if entering our target topic
+		if trimmedLine == fmt.Sprintf("### %s", topicName) {
+			inTopic = true
+			currentLinkIndex = 0
+			newLines = append(newLines, line)
+			continue
+		}
+
+		// Check if leaving topic (hit another heading)
+		if strings.HasPrefix(trimmedLine, "### ") {
+			inTopic = false
+		}
+
+		// If in topic and this is a link line
+		if inTopic && (strings.HasPrefix(trimmedLine, "- ") || strings.HasPrefix(trimmedLine, "* ")) {
+			if linkRegex.MatchString(trimmedLine) {
+				if currentLinkIndex == linkIndex {
+					// Skip this line (delete the link)
+					removed = true
+					currentLinkIndex++
+					continue
+				}
+				currentLinkIndex++
+			}
+		}
+
+		newLines = append(newLines, line)
+	}
+
+	if !removed {
+		return fmt.Errorf("link not found in topic")
+	}
+
+	// Write back
+	newContent := strings.Join(newLines, "\n")
+	return os.WriteFile(filename, []byte(newContent), 0644)
 }
 
 func (ms *MarkdownStore) appendLinksToTopic(filename, topicName string, links []models.Link) error {

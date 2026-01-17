@@ -18,12 +18,15 @@ build-frontend:
 	@echo "Cleaning old frontend builds..."
 	rm -rf internal/static/dist/*
 	rm -rf $(WEB_DIR)/dist/*
+	@echo "Creating dist directory..."
+	mkdir -p internal/static/dist
 	@echo "Building frontend..."
 	cd $(WEB_DIR) && npm install && npm run build
 	@echo "Frontend built successfully to internal/static/dist"
 
 build-backend:
 	@echo "Building backend..."
+	mkdir -p bin
 	go build -o bin/$(BINARY_NAME) cmd/server/main.go
 
 # Install the binary to Go bin directory
